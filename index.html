@@ -1,0 +1,1821 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>D365 Import App - Configuration Tool</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.4.19/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        .uppercase-input {
+            text-transform: uppercase;
+        }
+
+        .copy-btn {
+            cursor: pointer;
+            padding: 2px 6px;
+            margin-left: 4px;
+        }
+
+        .copy-btn:hover {
+            opacity: 0.7;
+        }
+    </style>
+</head>
+
+<body class="bg-base-200 min-h-screen p-4">
+    <div class="container mx-auto max-w-7xl">
+        <h1 class="text-4xl font-bold text-center mb-8">D365 Import Configuration Tool</h1>
+
+        <!-- Main Form -->
+        <div class="card bg-base-100 shadow-xl mb-6">
+            <div class="card-body">
+                <h2 class="card-title text-2xl mb-4">Main Information</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Created At</span>
+                        </label>
+                        <input type="date" id="create_at" class="input input-bordered" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Job Number</span>
+                        </label>
+                        <input type="text" id="job_number" class="input input-bordered" placeholder="e.g., 35411" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Customer Name</span>
+                        </label>
+                        <input type="text" id="customer_name" class="input input-bordered uppercase-input"
+                            placeholder="CUSTOMER NAME" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Customer Location</span>
+                        </label>
+                        <input type="text" id="customer_location" class="input input-bordered uppercase-input"
+                            placeholder="CUSTOMER LOCATION" />
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CRUD Management Section -->
+        <div class="card bg-base-100 shadow-xl mb-6">
+            <div class="card-body">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="card-title text-2xl">Manage Dropdown Options</h2>
+                    <button class="btn btn-sm btn-ghost" onclick="toggleCrudSection()">
+                        <svg id="crud-toggle-icon" class="w-5 h-5" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7">
+                            </path>
+                        </svg>
+                    </button>
+                </div>
+                <div id="crud-content" class="hidden">
+                    <div class="tabs tabs-boxed mb-4">
+                        <a class="tab tab-active" onclick="showCrudTab('heater')">Heater Options</a>
+                        <a class="tab" onclick="showCrudTab('tank')">Tank Options</a>
+                        <a class="tab" onclick="showCrudTab('pump')">Pump Options</a>
+                    </div>
+
+                    <!-- Heater CRUD -->
+                    <div id="crud-heater" class="crud-section">
+                        <div class="overflow-x-auto">
+                            <table class="table table-zebra">
+                                <thead>
+                                    <tr>
+                                        <th>Field</th>
+                                        <th>Options</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="heater-options-tbody">
+                                    <!-- Populated by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Tank CRUD -->
+                    <div id="crud-tank" class="crud-section hidden">
+                        <div class="overflow-x-auto">
+                            <table class="table table-zebra">
+                                <thead>
+                                    <tr>
+                                        <th>Field</th>
+                                        <th>Options</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tank-options-tbody">
+                                    <!-- Populated by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Pump CRUD -->
+                    <div id="crud-pump" class="crud-section hidden">
+                        <div class="overflow-x-auto">
+                            <table class="table table-zebra">
+                                <thead>
+                                    <tr>
+                                        <th>Field</th>
+                                        <th>Options</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="pump-options-tbody">
+                                    <!-- Populated by JavaScript -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- File Operations -->
+        <div class="card bg-base-100 shadow-xl mb-6">
+            <div class="card-body">
+                <h2 class="card-title text-xl mb-4">File Operations</h2>
+                <div class="flex flex-wrap gap-2">
+                    <button class="btn btn-primary" onclick="saveCurrentJob()">Save Current Job</button>
+                    <button class="btn btn-secondary" onclick="showJobList()">Manage Jobs</button>
+                    <button class="btn btn-success" onclick="exportToPDF()">Export to PDF</button>
+                </div>
+                <p class="text-sm text-gray-500 mt-2">All jobs are saved to D365_Jobs.json file. Save to Documents/D365
+                    folder for easy access.</p>
+            </div>
+        </div>
+
+        <!-- Job List Modal -->
+        <dialog id="job-list-modal" class="modal">
+            <div class="modal-box w-11/12 max-w-3xl">
+                <h3 class="font-bold text-lg mb-4">Job List</h3>
+                <div class="mb-4">
+                    <button class="btn btn-primary btn-sm" onclick="selectJobsFile()">Select Jobs File Location</button>
+                    <label class="btn btn-secondary btn-sm ml-2" for="load-jobs-file">
+                        Load from File
+                        <input type="file" id="load-jobs-file" accept=".json" class="hidden"
+                            onchange="loadJobsFile(event)" />
+                    </label>
+                    <button class="btn btn-success btn-sm ml-2" onclick="createNewJob()">New Job</button>
+                </div>
+                <div class="mb-2">
+                    <p class="text-sm text-gray-500" id="current-file-info">
+                        No file selected. Click "Select Jobs File Location" to choose where to save jobs.
+                    </p>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="table table-zebra w-full">
+                        <thead>
+                            <tr>
+                                <th>Job Number</th>
+                                <th>Customer</th>
+                                <th>Location</th>
+                                <th>Created</th>
+                                <th>Last Saved</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="job-list-tbody">
+                            <!-- Populated by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="modal-action">
+                    <button class="btn" onclick="closeJobList()">Close</button>
+                </div>
+            </div>
+            <form method="dialog" class="modal-backdrop">
+                <button>close</button>
+            </form>
+        </dialog>
+
+        <!-- Configuration Sections -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            <!-- Heater Configuration -->
+            <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                    <h2 class="card-title text-xl mb-4">Heater Configurations</h2>
+                    <button class="btn btn-primary btn-sm mb-4" onclick="addHeaterConfig()">Add Heater</button>
+                    <div id="heater-configs"></div>
+                </div>
+            </div>
+
+            <!-- Tank Configuration -->
+            <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                    <h2 class="card-title text-xl mb-4">Tank Configurations</h2>
+                    <button class="btn btn-primary btn-sm mb-4" onclick="addTankConfig()">Add Tank</button>
+                    <div id="tank-configs"></div>
+                </div>
+            </div>
+
+            <!-- Pump Configuration -->
+            <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                    <h2 class="card-title text-xl mb-4">Pump Configurations</h2>
+                    <button class="btn btn-primary btn-sm mb-4" onclick="addPumpConfig()">Add Pump</button>
+                    <div id="pump-configs"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h2 class="card-title text-2xl mb-4">Generated Results</h2>
+                <button class="btn btn-success mb-4" onclick="generateResults()">Generate All Results</button>
+                <div id="results-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Default options data
+        const defaultOptions = {
+            heater: {
+                Material: ['304', '316', 'AL6XN'],
+                'Heater Diameter': ['30', '42', '54', '60', '76', '84', '96'],
+                'Stack Diameter': ['12', '18', '24', '30', '36'],
+                'Stack Height': ['9.5', '10', '12', '18', '24'],
+                'Heater Height': ['7', '8', '8.5', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20'],
+                'Flange Inlet': ['1', '1.25', '1.5', '2', '2.5', '3', '4', '6'],
+                'Heater Model': ['GP', 'RM', 'TE-100', 'TE-NSF'],
+                'Gas Train Size': ['1', '1.5', '2', '2.5', '3'],
+                'Gas Train Mount': ['BM', 'FM'],
+                'Gas Train BTU': ['1.2', '2', '3', '4.5', '5.5', '6', '7', '8', '9', '9.9', '10', '10.5', '11', '12', '12.5', '15', '18', '19', '20', '21', '25', '30'],
+                'Gas Train Hand': ['LEFT', 'RIGHT'],
+                'Heater A/B': ['A', 'B', 'C', 'D', '1', '2', '3', '4']
+            },
+            tank: {
+                Material: ['304', '316'],
+                'Tank Diameter': ['48', '54', '60', '66', '72', '78', '84', '90', '96', '102', '108', '114', '120', '126', '132', '138', '144', '150', '156', '162', '168'],
+                'Tank Height': ['3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24', '25', '26', '27', '28', '29', '30', '31', '32', '33', '34', '35'],
+                'Tank Inches': ['36.25', '48.25', '60.25', '72.25', '83.5', '95.5', '107.5', '119.5', '131.5', '143.5', '154.75', '166.75', '178.75', '190.75', '202.75', '214.75', '226', '238', '250', '262', '274', '286', '297.25', '309.25', '321.25', '333.25', '345.25', '357.25', '368.5', '380.5', '392.5', '404.5', '416.5'],
+                Type: ['HW', 'TW', 'CW', 'CMF', 'RO', 'WW', 'EQ']
+            },
+            pump: {
+                Material: ['304', '316'],
+                '# of Pumps': ['SIMPLEX', 'DUPLEX', 'TRIPLEX', 'QUADPLEX'],
+                'Pump Pressure': ['LP', 'MP', 'HP'],
+                Type: ['HW', 'TW', 'CW', 'CMF', 'RO', 'WW'],
+                HP: ['0.5', '0.75', '1', '2', '3', '5', '7.5', '10', '15', '20', '25', '30', '40', '50', '60', '75', '100']
+            }
+        };
+
+        // Load options from localStorage or use defaults
+        let options = JSON.parse(localStorage.getItem('dropdownOptions') || JSON.stringify(defaultOptions));
+
+        // Configuration arrays
+        let heaterConfigs = JSON.parse(localStorage.getItem('heaterConfigs') || '[]');
+        let tankConfigs = JSON.parse(localStorage.getItem('tankConfigs') || '[]');
+        let pumpConfigs = JSON.parse(localStorage.getItem('pumpConfigs') || '[]');
+
+        // Jobs array - stores all jobs
+        let allJobs = JSON.parse(localStorage.getItem('allJobs') || '[]');
+        let currentJobId = null; // Track current job being edited
+        let jobsFileHandle = null; // File handle for the jobs file
+
+        // CRUD Section Toggle
+        function toggleCrudSection() {
+            const content = document.getElementById('crud-content');
+            const icon = document.getElementById('crud-toggle-icon');
+            if (content.classList.contains('hidden')) {
+                content.classList.remove('hidden');
+                icon.style.transform = 'rotate(180deg)';
+            } else {
+                content.classList.add('hidden');
+                icon.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async function () {
+            // Set today's date
+            document.getElementById('create_at').valueAsDate = new Date();
+
+            // Try to load file handle from IndexedDB
+            await loadFileHandle();
+
+            // Load jobs from file if file handle exists, otherwise from localStorage
+            if (jobsFileHandle) {
+                await loadJobsFromFile();
+            } else {
+                loadJobsFromStorage();
+            }
+
+            // Update file info display
+            updateFileInfo();
+
+            // Show job list on startup if jobs exist
+            if (allJobs.length > 0) {
+                showJobList();
+            }
+
+            // Load saved form data
+            loadFormData();
+
+            // Initialize CRUD tables
+            renderCrudTables();
+
+            // Render existing configs
+            renderAllConfigs();
+        });
+
+        // CRUD Functions
+        function showCrudTab(type) {
+            document.querySelectorAll('.crud-section').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`crud-${type}`).classList.remove('hidden');
+            document.querySelectorAll('.tab').forEach(el => el.classList.remove('tab-active'));
+            event.target.classList.add('tab-active');
+        }
+
+        function renderCrudTables() {
+            ['heater', 'tank', 'pump'].forEach(type => {
+                const tbody = document.getElementById(`${type}-options-tbody`);
+                tbody.innerHTML = '';
+
+                Object.keys(options[type]).forEach(field => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="font-bold">${field}</td>
+                        <td>
+                            <div class="flex flex-wrap gap-2" id="${type}-${field}-options">
+                                ${options[type][field].map(opt => `
+                                    <span class="badge badge-primary badge-lg">
+                                        ${opt}
+                                        <button class="ml-2" onclick="removeOption('${type}', '${field}', '${opt}')">×</button>
+                                    </span>
+                                `).join('')}
+                            </div>
+                        </td>
+                        <td>
+                            <div class="flex gap-2">
+                                <input type="text" id="${type}-${field}-new" class="input input-xs input-bordered" placeholder="New option" />
+                                <button class="btn btn-xs btn-primary" onclick="addOption('${type}', '${field}')">Add</button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
+                });
+            });
+        }
+
+        function addOption(type, field) {
+            const input = document.getElementById(`${type}-${field}-new`);
+            const value = input.value.trim();
+            if (value && !options[type][field].includes(value)) {
+                options[type][field].push(value);
+                saveOptions();
+                renderCrudTables();
+                renderAllConfigs();
+            }
+            input.value = '';
+        }
+
+        function removeOption(type, field, value) {
+            options[type][field] = options[type][field].filter(opt => opt !== value);
+            saveOptions();
+            renderCrudTables();
+            renderAllConfigs();
+        }
+
+        function saveOptions() {
+            localStorage.setItem('dropdownOptions', JSON.stringify(options));
+        }
+
+        // Configuration Functions
+        function addHeaterConfig() {
+            heaterConfigs.push({
+                dash_number: '',
+                Material: '',
+                'Heater Diameter': '',
+                'Stack Diameter': '',
+                'Stack Height': '',
+                'Heater Height': '',
+                'Flange Inlet': '',
+                'Heater Model': '',
+                'Gas Train Size': '',
+                'Gas Train Mount': '',
+                'Gas Train BTU': '',
+                'Gas Train Hand': '',
+                'Heater A/B': ''
+            });
+            saveConfigs();
+            renderHeaterConfigs();
+        }
+
+        function addTankConfig() {
+            tankConfigs.push({
+                dash_number: '',
+                Material: '',
+                'Tank Diameter': '',
+                'Tank Height': '',
+                'Tank Inches': '',
+                Type: ''
+            });
+            saveConfigs();
+            renderTankConfigs();
+        }
+
+        function addPumpConfig() {
+            pumpConfigs.push({
+                dash_number: '',
+                Material: '',
+                '# of Pumps': '',
+                'Pump Pressure': '',
+                Type: '',
+                HP: ''
+            });
+            saveConfigs();
+            renderPumpConfigs();
+        }
+
+        function removeHeaterConfig(index) {
+            heaterConfigs.splice(index, 1);
+            saveConfigs();
+            renderHeaterConfigs();
+        }
+
+        function removeTankConfig(index) {
+            tankConfigs.splice(index, 1);
+            saveConfigs();
+            renderTankConfigs();
+        }
+
+        function removePumpConfig(index) {
+            pumpConfigs.splice(index, 1);
+            saveConfigs();
+            renderPumpConfigs();
+        }
+
+        function renderHeaterConfigs() {
+            const container = document.getElementById('heater-configs');
+            container.innerHTML = '';
+
+            heaterConfigs.forEach((config, index) => {
+                const card = document.createElement('div');
+                card.className = 'card bg-base-200 mb-4';
+                card.innerHTML = `
+                    <div class="card-body">
+                        <div class="flex justify-between items-center mb-2">
+                            <h3 class="font-bold">Heater ${index + 1}</h3>
+                            <button class="btn btn-xs btn-error" onclick="removeHeaterConfig(${index})">Remove</button>
+                        </div>
+                        <div class="form-control mb-2">
+                            <label class="label">
+                                <span class="label-text text-xs">Dash Number</span>
+                            </label>
+                            <input type="text" class="input input-sm input-bordered" 
+                                   value="${config.dash_number}" 
+                                   placeholder="00"
+                                   onchange="updateHeaterConfig(${index}, 'dash_number', this.value)" />
+                        </div>
+                        ${Object.keys(options.heater).map(field => `
+                            <div class="form-control mb-2">
+                                <label class="label">
+                                    <span class="label-text text-xs">${field}</span>
+                                </label>
+                                <select class="select select-sm select-bordered" 
+                                        onchange="updateHeaterConfig(${index}, '${field}', this.value)">
+                                    <option value="">Select ${field}</option>
+                                    ${options.heater[field].map(opt =>
+                    `<option value="${opt}" ${config[field] === opt ? 'selected' : ''}>${opt}</option>`
+                ).join('')}
+                                </select>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function renderTankConfigs() {
+            const container = document.getElementById('tank-configs');
+            container.innerHTML = '';
+
+            tankConfigs.forEach((config, index) => {
+                const card = document.createElement('div');
+                card.className = 'card bg-base-200 mb-4';
+                card.innerHTML = `
+                    <div class="card-body">
+                        <div class="flex justify-between items-center mb-2">
+                            <h3 class="font-bold">Tank ${index + 1}</h3>
+                            <button class="btn btn-xs btn-error" onclick="removeTankConfig(${index})">Remove</button>
+                        </div>
+                        <div class="form-control mb-2">
+                            <label class="label">
+                                <span class="label-text text-xs">Dash Number</span>
+                            </label>
+                            <input type="text" class="input input-sm input-bordered" 
+                                   value="${config.dash_number}" 
+                                   placeholder="00"
+                                   onchange="updateTankConfig(${index}, 'dash_number', this.value)" />
+                        </div>
+                        ${Object.keys(options.tank).map(field => `
+                            <div class="form-control mb-2">
+                                <label class="label">
+                                    <span class="label-text text-xs">${field}</span>
+                                </label>
+                                <select class="select select-sm select-bordered" 
+                                        onchange="updateTankConfig(${index}, '${field}', this.value)">
+                                    <option value="">Select ${field}</option>
+                                    ${options.tank[field].map(opt =>
+                    `<option value="${opt}" ${config[field] === opt ? 'selected' : ''}>${opt}</option>`
+                ).join('')}
+                                </select>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function renderPumpConfigs() {
+            const container = document.getElementById('pump-configs');
+            container.innerHTML = '';
+
+            pumpConfigs.forEach((config, index) => {
+                const card = document.createElement('div');
+                card.className = 'card bg-base-200 mb-4';
+                card.innerHTML = `
+                    <div class="card-body">
+                        <div class="flex justify-between items-center mb-2">
+                            <h3 class="font-bold">Pump ${index + 1}</h3>
+                            <button class="btn btn-xs btn-error" onclick="removePumpConfig(${index})">Remove</button>
+                        </div>
+                        <div class="form-control mb-2">
+                            <label class="label">
+                                <span class="label-text text-xs">Dash Number</span>
+                            </label>
+                            <input type="text" class="input input-sm input-bordered" 
+                                   value="${config.dash_number}" 
+                                   placeholder="00"
+                                   onchange="updatePumpConfig(${index}, 'dash_number', this.value)" />
+                        </div>
+                        ${Object.keys(options.pump).map(field => `
+                            <div class="form-control mb-2">
+                                <label class="label">
+                                    <span class="label-text text-xs">${field}</span>
+                                </label>
+                                <select class="select select-sm select-bordered" 
+                                        onchange="updatePumpConfig(${index}, '${field}', this.value)">
+                                    <option value="">Select ${field}</option>
+                                    ${options.pump[field].map(opt =>
+                    `<option value="${opt}" ${config[field] === opt ? 'selected' : ''}>${opt}</option>`
+                ).join('')}
+                                </select>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        function renderAllConfigs() {
+            renderHeaterConfigs();
+            renderTankConfigs();
+            renderPumpConfigs();
+        }
+
+        function updateHeaterConfig(index, field, value) {
+            heaterConfigs[index][field] = value;
+            saveConfigs();
+        }
+
+        function updateTankConfig(index, field, value) {
+            tankConfigs[index][field] = value;
+            saveConfigs();
+        }
+
+        function updatePumpConfig(index, field, value) {
+            pumpConfigs[index][field] = value;
+            saveConfigs();
+        }
+
+        function saveConfigs() {
+            localStorage.setItem('heaterConfigs', JSON.stringify(heaterConfigs));
+            localStorage.setItem('tankConfigs', JSON.stringify(tankConfigs));
+            localStorage.setItem('pumpConfigs', JSON.stringify(pumpConfigs));
+
+            // Auto-save current job if it exists
+            if (currentJobId || document.getElementById('job_number').value) {
+                const jobData = getCurrentJobData();
+                const existingIndex = allJobs.findIndex(j => j.id === jobData.id);
+                if (existingIndex >= 0) {
+                    allJobs[existingIndex] = jobData;
+                } else if (document.getElementById('job_number').value) {
+                    allJobs.push(jobData);
+                    currentJobId = jobData.id;
+                }
+                localStorage.setItem('allJobs', JSON.stringify(allJobs));
+            }
+        }
+
+        function loadFormData() {
+            const saved = JSON.parse(localStorage.getItem('formData') || '{}');
+            if (saved.job_number) document.getElementById('job_number').value = saved.job_number;
+            if (saved.customer_name) document.getElementById('customer_name').value = saved.customer_name;
+            if (saved.customer_location) document.getElementById('customer_location').value = saved.customer_location;
+            if (saved.create_at) document.getElementById('create_at').value = saved.create_at;
+        }
+
+        // Auto-save form data
+        ['job_number', 'customer_name', 'customer_location', 'create_at'].forEach(id => {
+            document.getElementById(id).addEventListener('change', function () {
+                const formData = {
+                    job_number: document.getElementById('job_number').value,
+                    customer_name: document.getElementById('customer_name').value,
+                    customer_location: document.getElementById('customer_location').value,
+                    create_at: document.getElementById('create_at').value
+                };
+                localStorage.setItem('formData', JSON.stringify(formData));
+
+                // Auto-save to jobs if job number exists
+                if (document.getElementById('job_number').value) {
+                    const jobData = getCurrentJobData();
+                    const existingIndex = allJobs.findIndex(j => j.id === jobData.id);
+                    if (existingIndex >= 0) {
+                        allJobs[existingIndex] = jobData;
+                    } else {
+                        allJobs.push(jobData);
+                        currentJobId = jobData.id;
+                    }
+                    localStorage.setItem('allJobs', JSON.stringify(allJobs));
+                }
+            });
+        });
+
+        // File Operations - Jobs Management
+        function getCurrentJobData() {
+            return {
+                id: currentJobId || generateJobId(),
+                formData: {
+                    create_at: document.getElementById('create_at').value,
+                    job_number: document.getElementById('job_number').value,
+                    customer_name: document.getElementById('customer_name').value,
+                    customer_location: document.getElementById('customer_location').value
+                },
+                options: options,
+                heaterConfigs: heaterConfigs,
+                tankConfigs: tankConfigs,
+                pumpConfigs: pumpConfigs,
+                createdAt: currentJobId ? allJobs.find(j => j.id === currentJobId)?.createdAt || new Date().toISOString() : new Date().toISOString(),
+                lastSaved: new Date().toISOString()
+            };
+        }
+
+        function generateJobId() {
+            return 'job_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+
+        async function saveCurrentJob() {
+            const jobData = getCurrentJobData();
+            const jobNumber = jobData.formData.job_number;
+
+            if (!jobNumber) {
+                alert('Please enter a Job Number before saving.');
+                return;
+            }
+
+            // Find existing job or create new
+            const existingIndex = allJobs.findIndex(j => j.id === jobData.id);
+            if (existingIndex >= 0) {
+                allJobs[existingIndex] = jobData;
+            } else {
+                allJobs.push(jobData);
+                currentJobId = jobData.id;
+            }
+
+            // Save to localStorage
+            localStorage.setItem('allJobs', JSON.stringify(allJobs));
+
+            // Save to file
+            await saveJobsToFile();
+
+            alert('Job saved successfully!');
+        }
+
+        async function saveJobsToFile() {
+            // Check if File System Access API is supported
+            if ('showSaveFilePicker' in window) {
+                try {
+                    // If we don't have a file handle, get one from user (first time only)
+                    if (!jobsFileHandle) {
+                        console.log('No file handle found, prompting user to select file location...');
+                        jobsFileHandle = await window.showSaveFilePicker({
+                            suggestedName: localStorage.getItem('jobsFileName') || 'D365_Jobs.json',
+                            types: [{
+                                description: 'JSON Files',
+                                accept: { 'application/json': ['.json'] }
+                            }]
+                        });
+                        // Save file handle to IndexedDB for future use
+                        await saveFileHandle();
+                        // Update file info display
+                        updateFileInfo();
+                        console.log('File handle saved for future use:', jobsFileHandle.name);
+                    } else {
+                        console.log('Using existing file handle:', jobsFileHandle.name);
+                    }
+
+                    // Write to the file (no prompt, just save)
+                    const writable = await jobsFileHandle.createWritable();
+                    const jsonStr = JSON.stringify(allJobs, null, 2);
+                    await writable.write(jsonStr);
+                    await writable.close();
+                    console.log('File saved successfully to:', jobsFileHandle.name);
+                } catch (error) {
+                    if (error.name === 'AbortError') {
+                        // User cancelled, don't do anything
+                        console.log('User cancelled file save');
+                        return;
+                    } else if (error.name === 'NotFoundError' || error.name === 'InvalidStateError') {
+                        // File handle is invalid (file was moved/deleted), clear it and prompt again
+                        console.log('File handle invalid, clearing and will prompt next time');
+                        await clearFileHandle();
+                        jobsFileHandle = null;
+                        // Try again with a new file picker
+                        try {
+                            jobsFileHandle = await window.showSaveFilePicker({
+                                suggestedName: localStorage.getItem('jobsFileName') || 'D365_Jobs.json',
+                                types: [{
+                                    description: 'JSON Files',
+                                    accept: { 'application/json': ['.json'] }
+                                }]
+                            });
+                            await saveFileHandle();
+                            updateFileInfo();
+                            const writable = await jobsFileHandle.createWritable();
+                            const jsonStr = JSON.stringify(allJobs, null, 2);
+                            await writable.write(jsonStr);
+                            await writable.close();
+                        } catch (retryError) {
+                            console.error('Error on retry:', retryError);
+                            downloadJobsFile();
+                        }
+                    } else {
+                        console.error('Error saving file:', error);
+                        // Fallback to download if file access fails
+                        downloadJobsFile();
+                    }
+                }
+            } else {
+                // Fallback for browsers without File System Access API
+                downloadJobsFile();
+            }
+        }
+
+        function downloadJobsFile() {
+            const jsonStr = JSON.stringify(allJobs, null, 2);
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'D365_Jobs.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        async function loadJobsFromFile() {
+            if (!jobsFileHandle) return;
+
+            try {
+                const file = await jobsFileHandle.getFile();
+                const text = await file.text();
+                const loadedJobs = JSON.parse(text);
+
+                if (Array.isArray(loadedJobs)) {
+                    allJobs = loadedJobs;
+                    localStorage.setItem('allJobs', JSON.stringify(allJobs));
+                }
+            } catch (error) {
+                console.error('Error loading file:', error);
+                // Fallback to localStorage
+                loadJobsFromStorage();
+            }
+        }
+
+        async function loadFileHandle() {
+            try {
+                // Try to get file handle from IndexedDB
+                const db = await openDB();
+                const tx = db.transaction('fileHandles', 'readonly');
+                const store = tx.objectStore('fileHandles');
+                const result = await store.get('jobsFile');
+
+                if (result && result.handle) {
+                    // Verify the file handle is still valid
+                    try {
+                        await result.handle.getFile();
+                        jobsFileHandle = result.handle;
+                        console.log('File handle loaded successfully:', jobsFileHandle.name);
+                    } catch (e) {
+                        // File handle is invalid (file moved/deleted), clear it
+                        console.log('File handle invalid, clearing:', e);
+                        await clearFileHandle();
+                        jobsFileHandle = null;
+                    }
+                } else {
+                    // No handle in IndexedDB, check if we have a filename in localStorage
+                    const fileName = localStorage.getItem('jobsFileName');
+                    if (fileName) {
+                        console.log('Found filename in localStorage, but no file handle. User will need to select file again.');
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading file handle:', error);
+                // If IndexedDB fails, try to get filename from localStorage
+                const fileName = localStorage.getItem('jobsFileName');
+                if (fileName) {
+                    console.log('IndexedDB error, but found filename:', fileName);
+                }
+            }
+        }
+
+        async function saveFileHandle() {
+            if (!jobsFileHandle) return;
+
+            try {
+                const db = await openDB();
+                const tx = db.transaction('fileHandles', 'readwrite');
+                const store = tx.objectStore('fileHandles');
+                // Store file handle - File System Access API handles can be stored in IndexedDB
+                await store.put({ id: 'jobsFile', handle: jobsFileHandle });
+                // Also store file name in localStorage as backup reference
+                localStorage.setItem('jobsFileName', jobsFileHandle.name);
+            } catch (error) {
+                console.error('Error saving file handle:', error);
+                // If IndexedDB fails, at least store the filename
+                if (jobsFileHandle && jobsFileHandle.name) {
+                    localStorage.setItem('jobsFileName', jobsFileHandle.name);
+                }
+            }
+        }
+
+        async function clearFileHandle() {
+            try {
+                const db = await openDB();
+                const tx = db.transaction('fileHandles', 'readwrite');
+                const store = tx.objectStore('fileHandles');
+                await store.delete('jobsFile');
+                jobsFileHandle = null;
+                // Also clear filename from localStorage
+                localStorage.removeItem('jobsFileName');
+            } catch (error) {
+                console.error('Error clearing file handle:', error);
+                // Still clear the handle and filename even if IndexedDB fails
+                jobsFileHandle = null;
+                localStorage.removeItem('jobsFileName');
+            }
+        }
+
+        async function openDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('D365JobsDB', 1);
+
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => resolve(request.result);
+
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains('fileHandles')) {
+                        db.createObjectStore('fileHandles');
+                    }
+                };
+            });
+        }
+
+        function loadJobsFromStorage() {
+            allJobs = JSON.parse(localStorage.getItem('allJobs') || '[]');
+        }
+
+        async function loadJobsFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // If File System Access API is supported, try to get file handle
+            if ('showOpenFilePicker' in window && event.target.files && event.target.files.length > 0) {
+                try {
+                    // Try to get file handle from the file input
+                    // Note: File inputs don't provide file handles, so we'll use the file directly
+                    // and prompt user to select file via File System Access API for future saves
+                    const [fileHandle] = await window.showOpenFilePicker({
+                        types: [{
+                            description: 'JSON Files',
+                            accept: { 'application/json': ['.json'] }
+                        }],
+                        multiple: false
+                    });
+
+                    jobsFileHandle = fileHandle;
+                    await saveFileHandle();
+
+                    // Load from the file handle
+                    await loadJobsFromFile();
+                    renderJobList();
+                    alert('Jobs file loaded successfully!');
+                    return;
+                } catch (error) {
+                    if (error.name !== 'AbortError') {
+                        console.error('Error getting file handle:', error);
+                    }
+                }
+            }
+
+            // Fallback: read from file input
+            const reader = new FileReader();
+            reader.onload = async function (e) {
+                try {
+                    const loadedJobs = JSON.parse(e.target.result);
+                    if (Array.isArray(loadedJobs)) {
+                        allJobs = loadedJobs;
+                        localStorage.setItem('allJobs', JSON.stringify(allJobs));
+                        renderJobList();
+                        alert('Jobs file loaded successfully!');
+                    } else {
+                        alert('Invalid jobs file format. Expected an array of jobs.');
+                    }
+                } catch (error) {
+                    alert('Error loading jobs file: ' + error.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function showJobList() {
+            updateFileInfo();
+            renderJobList();
+            document.getElementById('job-list-modal').showModal();
+        }
+
+        function closeJobList() {
+            document.getElementById('job-list-modal').close();
+        }
+
+        function renderJobList() {
+            const tbody = document.getElementById('job-list-tbody');
+            tbody.innerHTML = '';
+
+            if (allJobs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center">No jobs saved yet. Create a new job to get started.</td></tr>';
+                return;
+            }
+
+            allJobs.forEach((job, index) => {
+                const row = document.createElement('tr');
+                const createdDate = new Date(job.createdAt).toLocaleDateString();
+                const savedDate = new Date(job.lastSaved).toLocaleDateString();
+                const isCurrent = job.id === currentJobId;
+
+                row.className = isCurrent ? 'bg-base-200' : '';
+                row.innerHTML = `
+                    <td>${job.formData.job_number || 'N/A'}</td>
+                    <td>${job.formData.customer_name || 'N/A'}</td>
+                    <td>${job.formData.customer_location || 'N/A'}</td>
+                    <td>${createdDate}</td>
+                    <td>${savedDate}</td>
+                    <td>
+                        <div class="flex gap-2">
+                            ${isCurrent ? '<span class="badge badge-primary">Current</span>' : ''}
+                            <button class="btn btn-xs btn-primary" onclick="loadJob('${job.id}')">Load</button>
+                            <button class="btn btn-xs btn-error" onclick="deleteJob('${job.id}')">Delete</button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+
+        function loadJob(jobId) {
+            const job = allJobs.find(j => j.id === jobId);
+            if (!job) {
+                alert('Job not found!');
+                return;
+            }
+
+            currentJobId = jobId;
+
+            // Load form data
+            if (job.formData) {
+                if (job.formData.create_at) document.getElementById('create_at').value = job.formData.create_at;
+                if (job.formData.job_number) document.getElementById('job_number').value = job.formData.job_number;
+                if (job.formData.customer_name) document.getElementById('customer_name').value = job.formData.customer_name;
+                if (job.formData.customer_location) document.getElementById('customer_location').value = job.formData.customer_location;
+            }
+
+            // Load options
+            if (job.options) {
+                options = job.options;
+                saveOptions();
+            }
+
+            // Load configs
+            if (job.heaterConfigs) {
+                heaterConfigs = job.heaterConfigs;
+            } else {
+                heaterConfigs = [];
+            }
+            if (job.tankConfigs) {
+                tankConfigs = job.tankConfigs;
+            } else {
+                tankConfigs = [];
+            }
+            if (job.pumpConfigs) {
+                pumpConfigs = job.pumpConfigs;
+            } else {
+                pumpConfigs = [];
+            }
+
+            // Update localStorage
+            localStorage.setItem('heaterConfigs', JSON.stringify(heaterConfigs));
+            localStorage.setItem('tankConfigs', JSON.stringify(tankConfigs));
+            localStorage.setItem('pumpConfigs', JSON.stringify(pumpConfigs));
+
+            // Refresh UI
+            renderCrudTables();
+            renderAllConfigs();
+            closeJobList();
+
+            alert('Job loaded successfully!');
+        }
+
+        async function deleteJob(jobId) {
+            if (!confirm('Are you sure you want to delete this job?')) {
+                return;
+            }
+
+            allJobs = allJobs.filter(j => j.id !== jobId);
+            localStorage.setItem('allJobs', JSON.stringify(allJobs));
+
+            if (currentJobId === jobId) {
+                currentJobId = null;
+                // Clear current form
+                document.getElementById('job_number').value = '';
+                document.getElementById('customer_name').value = '';
+                document.getElementById('customer_location').value = '';
+                document.getElementById('create_at').valueAsDate = new Date();
+                heaterConfigs = [];
+                tankConfigs = [];
+                pumpConfigs = [];
+                saveConfigs();
+                renderAllConfigs();
+            }
+
+            await saveJobsToFile();
+            renderJobList();
+        }
+
+        async function selectJobsFile() {
+            if (!('showOpenFilePicker' in window)) {
+                alert('File System Access API is not supported in this browser. Please use the "Load from File" option.');
+                return;
+            }
+
+            try {
+                const [fileHandle] = await window.showOpenFilePicker({
+                    types: [{
+                        description: 'JSON Files',
+                        accept: { 'application/json': ['.json'] }
+                    }],
+                    multiple: false
+                });
+
+                jobsFileHandle = fileHandle;
+                await saveFileHandle();
+
+                // Load jobs from the selected file
+                await loadJobsFromFile();
+
+                // Update UI
+                updateFileInfo();
+                renderJobList();
+
+                alert('Jobs file selected and loaded successfully!');
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    alert('Error selecting file: ' + error.message);
+                }
+            }
+        }
+
+        function updateFileInfo() {
+            const infoEl = document.getElementById('current-file-info');
+            if (infoEl) {
+                if (jobsFileHandle) {
+                    infoEl.textContent = `Current file: ${jobsFileHandle.name} (All saves go to this file automatically)`;
+                } else {
+                    const fileName = localStorage.getItem('jobsFileName');
+                    if (fileName) {
+                        infoEl.textContent = `File: ${fileName} (Will prompt on next save to reconnect)`;
+                    } else {
+                        infoEl.textContent = 'No file selected. Click "Select Jobs File Location" or save a job to choose where to save jobs.';
+                    }
+                }
+            }
+        }
+
+        function createNewJob() {
+            // Save current job if there's data
+            const jobNumber = document.getElementById('job_number').value;
+            if (jobNumber && (heaterConfigs.length > 0 || tankConfigs.length > 0 || pumpConfigs.length > 0)) {
+                if (confirm('Save current job before creating new one?')) {
+                    saveCurrentJob();
+                }
+            }
+
+            // Clear form
+            currentJobId = null;
+            document.getElementById('job_number').value = '';
+            document.getElementById('customer_name').value = '';
+            document.getElementById('customer_location').value = '';
+            document.getElementById('create_at').valueAsDate = new Date();
+            heaterConfigs = [];
+            tankConfigs = [];
+            pumpConfigs = [];
+            saveConfigs();
+            renderAllConfigs();
+
+            closeJobList();
+        }
+
+        function copyFromButton(button) {
+            let text = button.getAttribute('data-copy');
+            // Decode HTML entities
+            const textarea = document.createElement('textarea');
+            textarea.innerHTML = text;
+            text = textarea.value;
+            copyToClipboard(text, button);
+        }
+
+        function copyToClipboard(text, button) {
+            navigator.clipboard.writeText(text).then(() => {
+                // Show feedback
+                if (button) {
+                    const originalText = button.innerHTML;
+                    button.innerHTML = '✓';
+                    button.classList.add('text-success');
+                    setTimeout(() => {
+                        button.innerHTML = originalText;
+                        button.classList.remove('text-success');
+                    }, 1000);
+                }
+            }).catch(err => {
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                textArea.style.position = 'fixed';
+                textArea.style.opacity = '0';
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    if (button) {
+                        const originalText = button.innerHTML;
+                        button.innerHTML = '✓';
+                        button.classList.add('text-success');
+                        setTimeout(() => {
+                            button.innerHTML = originalText;
+                            button.classList.remove('text-success');
+                        }, 1000);
+                    }
+                } catch (err) {
+                    alert('Failed to copy: ' + err);
+                }
+                document.body.removeChild(textArea);
+            });
+        }
+
+        // Results Generation
+        function generateResults() {
+            const jobNumber = document.getElementById('job_number').value;
+            if (!jobNumber) {
+                alert('Please enter a Job Number');
+                return;
+            }
+
+            const results = {
+                heaters: [],
+                tanks: [],
+                pumps: []
+            };
+
+            // Generate Heater Results
+            heaterConfigs.forEach((config, idx) => {
+                if (!config.dash_number) return;
+
+                const basePN = `${jobNumber}-${config.dash_number.padStart(2, '0')}`;
+                const heaterLabel = config['Heater A/B'] || (heaterConfigs.length > 1 ? String(idx + 1) : 'A');
+                const diameter = config['Heater Diameter'] || '';
+                const height = config['Heater Height'] || '';
+                const model = config['Heater Model'] || '';
+                const material = config.Material || '';
+
+                // Main item
+                results.heaters.push({
+                    itemNumber: basePN,
+                    description: `HEATER ${heaterLabel}, FAB, ${diameter}X${height}, ${model}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    bom: `${basePN}-000`,
+                    template: 'FG FAB',
+                    productType: 'Item'
+                });
+
+                // Sub-items (.1, .2, .3, .4, .5)
+                const stackDiam = config['Stack Diameter'] || '';
+                const stackHt = config['Stack Height'] || '';
+                const flangeInlet = config['Flange Inlet'] || '';
+                const gasSize = config['Gas Train Size'] || '';
+                const gasMount = config['Gas Train Mount'] || '';
+                const gasBTU = config['Gas Train BTU'] || '';
+                const gasHand = config['Gas Train Hand'] || '';
+
+                results.heaters.push({
+                    itemNumber: `${basePN}.1`,
+                    description: `HEATER ${heaterLabel}, WELD, ${diameter}X${height}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    bom: `${basePN}.1-000`,
+                    template: 'Sub Assy',
+                    productType: 'Pegged Supply'
+                });
+
+                results.heaters.push({
+                    itemNumber: `${basePN}.2`,
+                    description: `HEATER ${heaterLabel}, SHELL, ${diameter}X${height}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    bom: `${basePN}.2-000`,
+                    template: 'Sub Assy',
+                    productType: 'Phantom'
+                });
+
+                if (stackDiam && stackHt && flangeInlet) {
+                    results.heaters.push({
+                        itemNumber: `${basePN}.3`,
+                        description: `HEATER ${heaterLabel}, STACK, ${stackDiam}X${stackHt}, W/${flangeInlet}FL`,
+                        bom: `${basePN}.3-000`,
+                        template: 'Sub Assy',
+                        productType: 'Phantom'
+                    });
+                }
+
+                if (gasSize && gasMount && gasBTU && gasHand) {
+                    results.heaters.push({
+                        itemNumber: `${basePN}.4`,
+                        description: `GAS TRAIN, HTR ${heaterLabel}, ${gasSize}, ${gasMount}, SIEMENS, ${gasBTU}MBTU, ${gasHand}`,
+                        bom: `${basePN}.4-000`,
+                        template: 'Sub Assy',
+                        productType: 'Pegged Supply'
+                    });
+                }
+
+                if (model) {
+                    results.heaters.push({
+                        itemNumber: `${basePN}.5`,
+                        description: `HEATER ${heaterLabel}, MOD PIPING, ${model}`,
+                        bom: `${basePN}.5-000`,
+                        template: 'Sub Assy',
+                        productType: 'Phantom'
+                    });
+                }
+
+                // Sub-item .1-A
+                if (diameter && stackDiam && material) {
+                    results.heaters.push({
+                        itemNumber: `${basePN}.1-A`,
+                        description: `PRECUT HTRA${diameter}, ${stackDiam}STACK, 11GA, ${material}`,
+                        bom: '',
+                        template: '',
+                        productType: ''
+                    });
+                }
+            });
+
+            // Generate Tank Results
+            tankConfigs.forEach((config, idx) => {
+                if (!config.dash_number) return;
+
+                const basePN = `${jobNumber}-${config.dash_number.padStart(2, '0')}`;
+                const diameter = config['Tank Diameter'] || '';
+                const height = config['Tank Height'] || '';
+                const tankInches = config['Tank Inches'] || '';
+                const type = config.Type || '';
+                const material = config.Material || '';
+
+                // Main item
+                results.tanks.push({
+                    itemNumber: basePN,
+                    description: `TANK, ${diameter}X${height}, ${type}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    bom: `${basePN}-000`,
+                    template: 'FG FAB',
+                    productType: 'Item'
+                });
+
+                // Sub-item .1 - Always generated
+                results.tanks.push({
+                    itemNumber: `${basePN}.1`,
+                    description: `TANK, SHELL, ${diameter}X${tankInches || height}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    bom: `${basePN}.1-000`,
+                    template: 'Sub Assy',
+                    productType: 'Phantom'
+                });
+
+                // Sub-item .1-A (but formatted as basePN-A, not basePN.1-A)
+                if (diameter && height && material) {
+                    results.tanks.push({
+                        itemNumber: `${basePN}-A`,
+                        description: `PRECUT TANK${diameter}X${height}, 11GA, ${material}`,
+                        bom: '',
+                        template: '',
+                        productType: ''
+                    });
+                }
+            });
+
+            // Generate Pump Results
+            pumpConfigs.forEach((config, idx) => {
+                if (!config.dash_number) return;
+
+                const basePN = `${jobNumber}-${config.dash_number.padStart(2, '0')}`;
+                const numPumps = config['# of Pumps'] || '';
+                const pressure = config['Pump Pressure'] || '';
+                const type = config.Type || '';
+                const hp = config.HP || '';
+
+                // Main item
+                results.pumps.push({
+                    itemNumber: basePN,
+                    description: `PUMP, ${numPumps}, ${pressure}, ${type}, ${hp}HP`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    bom: `${basePN}-000`
+                });
+
+                // Sub-item .1
+                const material = config.Material || '';
+                if (numPumps && material) {
+                    // Calculate dimensions based on pump configuration (simplified)
+                    const width = numPumps === 'SIMPLEX' ? '27.25' : numPumps === 'DUPLEX' ? '55' : '82.75';
+                    const length = '27.25';
+                    const height = '18.125';
+
+                    results.pumps.push({
+                        itemNumber: `${basePN}.1`,
+                        description: `PUMP SKID, ${numPumps}, ${width}X${length}X${height}, ${material}`,
+                        bom: `${basePN}.1-000`
+                    });
+                }
+
+                // Sub-item .1-A
+                if (numPumps) {
+                    results.pumps.push({
+                        itemNumber: `${basePN}.1-A`,
+                        description: `PRECUT, ${numPumps} PUMP SKID, 3/16PL`,
+                        bom: ''
+                    });
+                }
+            });
+
+            displayResults(results);
+        }
+
+        function displayResults(results) {
+            const container = document.getElementById('results-container');
+            container.innerHTML = '';
+
+            // Heater Results
+            if (results.heaters.length > 0) {
+                const heaterSection = document.createElement('div');
+                heaterSection.className = 'mb-6';
+                heaterSection.innerHTML = `
+                    <h3 class="text-xl font-bold mb-2">HEATER RESULT</h3>
+                    <div class="overflow-x-auto">
+                        <table class="table table-zebra w-full">
+                            <thead>
+                                <tr>
+                                    <th>Item Number</th>
+                                    <th>Description</th>
+                                    <th>BOM</th>
+                                    <th>Template</th>
+                                    <th>Product Type</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${results.heaters.map((item, idx) => {
+                    const itemNumEscaped = item.itemNumber.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+                    const descEscaped = item.description.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+                    const bomEscaped = item.bom ? item.bom.replace(/"/g, '&quot;').replace(/'/g, '&#39;') : '';
+                    return `
+                                    <tr>
+                                        <td>
+                                            ${item.itemNumber}
+                                            <button class="btn btn-xs btn-ghost copy-btn" data-copy="${itemNumEscaped}" onclick="copyFromButton(this)" title="Copy Item Number">
+                                                📋
+                                            </button>
+                                        </td>
+                                        <td>
+                                            ${item.description}
+                                            <button class="btn btn-xs btn-ghost copy-btn" data-copy="${descEscaped}" onclick="copyFromButton(this)" title="Copy Description">
+                                                📋
+                                            </button>
+                                        </td>
+                                        <td>
+                                            ${item.bom}
+                                            ${item.bom ? `<button class="btn btn-xs btn-ghost copy-btn" data-copy="${bomEscaped}" onclick="copyFromButton(this)" title="Copy BOM">
+                                                📋
+                                            </button>` : ''}
+                                        </td>
+                                        <td>${item.template}</td>
+                                        <td>${item.productType}</td>
+                                    </tr>
+                                `;
+                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                container.appendChild(heaterSection);
+            }
+
+            // Tank Results
+            if (results.tanks.length > 0) {
+                const tankSection = document.createElement('div');
+                tankSection.className = 'mb-6';
+                tankSection.innerHTML = `
+                    <h3 class="text-xl font-bold mb-2">TANK RESULTS</h3>
+                    <div class="overflow-x-auto">
+                        <table class="table table-zebra w-full">
+                            <thead>
+                                <tr>
+                                    <th>Item Number</th>
+                                    <th>Description</th>
+                                    <th>BOM</th>
+                                    <th>Template</th>
+                                    <th>Product Type</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${results.tanks.map((item, idx) => {
+                    const itemNumEscaped = item.itemNumber.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+                    const descEscaped = item.description.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+                    const bomEscaped = item.bom ? item.bom.replace(/"/g, '&quot;').replace(/'/g, '&#39;') : '';
+                    return `
+                                    <tr>
+                                        <td>
+                                            ${item.itemNumber}
+                                            <button class="btn btn-xs btn-ghost copy-btn" data-copy="${itemNumEscaped}" onclick="copyFromButton(this)" title="Copy Item Number">
+                                                📋
+                                            </button>
+                                        </td>
+                                        <td>
+                                            ${item.description}
+                                            <button class="btn btn-xs btn-ghost copy-btn" data-copy="${descEscaped}" onclick="copyFromButton(this)" title="Copy Description">
+                                                📋
+                                            </button>
+                                        </td>
+                                        <td>
+                                            ${item.bom}
+                                            ${item.bom ? `<button class="btn btn-xs btn-ghost copy-btn" data-copy="${bomEscaped}" onclick="copyFromButton(this)" title="Copy BOM">
+                                                📋
+                                            </button>` : ''}
+                                        </td>
+                                        <td>${item.template}</td>
+                                        <td>${item.productType}</td>
+                                    </tr>
+                                `;
+                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                container.appendChild(tankSection);
+            }
+
+            // Pump Results
+            if (results.pumps.length > 0) {
+                const pumpSection = document.createElement('div');
+                pumpSection.className = 'mb-6';
+                pumpSection.innerHTML = `
+                    <h3 class="text-xl font-bold mb-2">PUMP RESULTS</h3>
+                    <div class="overflow-x-auto">
+                        <table class="table table-zebra w-full">
+                            <thead>
+                                <tr>
+                                    <th>Item Number</th>
+                                    <th>Description</th>
+                                    <th>BOM</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${results.pumps.map((item, idx) => {
+                    const itemNumEscaped = item.itemNumber.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+                    const descEscaped = item.description.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+                    const bomEscaped = item.bom ? item.bom.replace(/"/g, '&quot;').replace(/'/g, '&#39;') : '';
+                    return `
+                                    <tr>
+                                        <td>
+                                            ${item.itemNumber}
+                                            <button class="btn btn-xs btn-ghost copy-btn" data-copy="${itemNumEscaped}" onclick="copyFromButton(this)" title="Copy Item Number">
+                                                📋
+                                            </button>
+                                        </td>
+                                        <td>
+                                            ${item.description}
+                                            <button class="btn btn-xs btn-ghost copy-btn" data-copy="${descEscaped}" onclick="copyFromButton(this)" title="Copy Description">
+                                                📋
+                                            </button>
+                                        </td>
+                                        <td>
+                                            ${item.bom}
+                                            ${item.bom ? `<button class="btn btn-xs btn-ghost copy-btn" data-copy="${bomEscaped}" onclick="copyFromButton(this)" title="Copy BOM">
+                                                📋
+                                            </button>` : ''}
+                                        </td>
+                                    </tr>
+                                `;
+                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                container.appendChild(pumpSection);
+            }
+
+            if (results.heaters.length === 0 && results.tanks.length === 0 && results.pumps.length === 0) {
+                container.innerHTML = '<p class="text-center text-gray-500">No configurations found. Please add and configure heaters, tanks, or pumps.</p>';
+            }
+        }
+
+        // PDF Export
+        function exportToPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            const jobNumber = document.getElementById('job_number').value || 'N/A';
+            const customerName = document.getElementById('customer_name').value || 'N/A';
+            const customerLocation = document.getElementById('customer_location').value || 'N/A';
+            const createAt = document.getElementById('create_at').value || 'N/A';
+
+            let yPos = 20;
+
+            // Header
+            doc.setFontSize(18);
+            doc.text('D365 Import Configuration Report', 105, yPos, { align: 'center' });
+            yPos += 10;
+
+            // Main Information
+            doc.setFontSize(12);
+            doc.setFont(undefined, 'bold');
+            doc.text('Main Information', 14, yPos);
+            yPos += 7;
+            doc.setFont(undefined, 'normal');
+            doc.text(`Job Number: ${jobNumber}`, 14, yPos);
+            yPos += 6;
+            doc.text(`Customer: ${customerName}`, 14, yPos);
+            yPos += 6;
+            doc.text(`Location: ${customerLocation}`, 14, yPos);
+            yPos += 6;
+            doc.text(`Created At: ${createAt}`, 14, yPos);
+            yPos += 10;
+
+            // Configuration Summary
+            doc.setFont(undefined, 'bold');
+            doc.text('Configuration Summary', 14, yPos);
+            yPos += 7;
+            doc.setFont(undefined, 'normal');
+            doc.text(`Heaters: ${heaterConfigs.length}`, 14, yPos);
+            yPos += 6;
+            doc.text(`Tanks: ${tankConfigs.length}`, 14, yPos);
+            yPos += 6;
+            doc.text(`Pumps: ${pumpConfigs.length}`, 14, yPos);
+            yPos += 10;
+
+            // Heater Configurations Summary
+            if (heaterConfigs.length > 0) {
+                doc.setFont(undefined, 'bold');
+                doc.text('Heater Configurations', 14, yPos);
+                yPos += 7;
+                doc.setFont(undefined, 'normal');
+                doc.setFontSize(10);
+
+                heaterConfigs.forEach((config, idx) => {
+                    if (yPos > 270) {
+                        doc.addPage();
+                        yPos = 20;
+                    }
+                    const dashNum = config.dash_number.padStart(2, '0');
+                    const basePN = `${jobNumber}-${dashNum}`;
+                    doc.text(`${idx + 1}. ${basePN}: ${config['Heater Diameter'] || 'N/A'}X${config['Heater Height'] || 'N/A'}, ${config.Material || 'N/A'}, ${config['Heater Model'] || 'N/A'}`, 14, yPos);
+                    yPos += 5;
+                });
+                yPos += 5;
+                doc.setFontSize(12);
+            }
+
+            // Tank Configurations Summary
+            if (tankConfigs.length > 0) {
+                doc.setFont(undefined, 'bold');
+                doc.text('Tank Configurations', 14, yPos);
+                yPos += 7;
+                doc.setFont(undefined, 'normal');
+                doc.setFontSize(10);
+
+                tankConfigs.forEach((config, idx) => {
+                    if (yPos > 270) {
+                        doc.addPage();
+                        yPos = 20;
+                    }
+                    const dashNum = config.dash_number.padStart(2, '0');
+                    const basePN = `${jobNumber}-${dashNum}`;
+                    doc.text(`${idx + 1}. ${basePN}: ${config['Tank Diameter'] || 'N/A'}X${config['Tank Height'] || 'N/A'}, ${config.Type || 'N/A'}, ${config.Material || 'N/A'}`, 14, yPos);
+                    yPos += 5;
+                });
+                yPos += 5;
+                doc.setFontSize(12);
+            }
+
+            // Pump Configurations Summary
+            if (pumpConfigs.length > 0) {
+                doc.setFont(undefined, 'bold');
+                doc.text('Pump Configurations', 14, yPos);
+                yPos += 7;
+                doc.setFont(undefined, 'normal');
+                doc.setFontSize(10);
+
+                pumpConfigs.forEach((config, idx) => {
+                    if (yPos > 270) {
+                        doc.addPage();
+                        yPos = 20;
+                    }
+                    const dashNum = config.dash_number.padStart(2, '0');
+                    const basePN = `${jobNumber}-${dashNum}`;
+                    doc.text(`${idx + 1}. ${basePN}: ${config['# of Pumps'] || 'N/A'}, ${config['Pump Pressure'] || 'N/A'}, ${config.Type || 'N/A'}, ${config.HP || 'N/A'}HP`, 14, yPos);
+                    yPos += 5;
+                });
+            }
+
+            // Generate results for detailed tables
+            const results = {
+                heaters: [],
+                tanks: [],
+                pumps: []
+            };
+
+            // Generate Heater Results (simplified for PDF)
+            heaterConfigs.forEach((config, idx) => {
+                if (!config.dash_number) return;
+                const basePN = `${jobNumber}-${config.dash_number.padStart(2, '0')}`;
+                const heaterLabel = config['Heater A/B'] || (heaterConfigs.length > 1 ? String(idx + 1) : 'A');
+                const diameter = config['Heater Diameter'] || '';
+                const height = config['Heater Height'] || '';
+                const model = config['Heater Model'] || '';
+                const material = config.Material || '';
+
+                results.heaters.push({
+                    itemNumber: basePN,
+                    description: `HEATER ${heaterLabel}, FAB, ${diameter}X${height}, ${model}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    bom: `${basePN}-000`
+                });
+            });
+
+            // Generate Tank Results
+            tankConfigs.forEach((config, idx) => {
+                if (!config.dash_number) return;
+                const basePN = `${jobNumber}-${config.dash_number.padStart(2, '0')}`;
+                const diameter = config['Tank Diameter'] || '';
+                const height = config['Tank Height'] || '';
+                const type = config.Type || '';
+                const material = config.Material || '';
+
+                results.tanks.push({
+                    itemNumber: basePN,
+                    description: `TANK, ${diameter}X${height}, ${type}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    bom: `${basePN}-000`
+                });
+            });
+
+            // Generate Pump Results
+            pumpConfigs.forEach((config, idx) => {
+                if (!config.dash_number) return;
+                const basePN = `${jobNumber}-${config.dash_number.padStart(2, '0')}`;
+                const numPumps = config['# of Pumps'] || '';
+                const pressure = config['Pump Pressure'] || '';
+                const type = config.Type || '';
+                const hp = config.HP || '';
+
+                results.pumps.push({
+                    itemNumber: basePN,
+                    description: `PUMP, ${numPumps}, ${pressure}, ${type}, ${hp}HP`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    bom: `${basePN}-000`
+                });
+            });
+
+            // Add detailed results tables
+            if (results.heaters.length > 0 || results.tanks.length > 0 || results.pumps.length > 0) {
+                doc.addPage();
+                yPos = 20;
+                doc.setFontSize(14);
+                doc.setFont(undefined, 'bold');
+                doc.text('Generated Part Numbers', 105, yPos, { align: 'center' });
+                yPos += 10;
+
+                // Heater Results Table
+                if (results.heaters.length > 0) {
+                    doc.setFontSize(12);
+                    doc.setFont(undefined, 'bold');
+                    doc.text('HEATER RESULTS', 14, yPos);
+                    yPos += 7;
+                    doc.setFontSize(9);
+                    doc.setFont(undefined, 'bold');
+                    doc.text('Item Number', 14, yPos);
+                    doc.text('Description', 60, yPos);
+                    doc.text('BOM', 150, yPos);
+                    yPos += 5;
+                    doc.setFont(undefined, 'normal');
+
+                    results.heaters.forEach(item => {
+                        if (yPos > 270) {
+                            doc.addPage();
+                            yPos = 20;
+                        }
+                        doc.text(item.itemNumber, 14, yPos);
+                        const descLines = doc.splitTextToSize(item.description, 80);
+                        doc.text(descLines, 60, yPos);
+                        doc.text(item.bom, 150, yPos);
+                        yPos += descLines.length * 5 + 2;
+                    });
+                    yPos += 5;
+                }
+
+                // Tank Results Table
+                if (results.tanks.length > 0) {
+                    doc.setFontSize(12);
+                    doc.setFont(undefined, 'bold');
+                    doc.text('TANK RESULTS', 14, yPos);
+                    yPos += 7;
+                    doc.setFontSize(9);
+                    doc.setFont(undefined, 'bold');
+                    doc.text('Item Number', 14, yPos);
+                    doc.text('Description', 60, yPos);
+                    doc.text('BOM', 150, yPos);
+                    yPos += 5;
+                    doc.setFont(undefined, 'normal');
+
+                    results.tanks.forEach(item => {
+                        if (yPos > 270) {
+                            doc.addPage();
+                            yPos = 20;
+                        }
+                        doc.text(item.itemNumber, 14, yPos);
+                        const descLines = doc.splitTextToSize(item.description, 80);
+                        doc.text(descLines, 60, yPos);
+                        doc.text(item.bom, 150, yPos);
+                        yPos += descLines.length * 5 + 2;
+                    });
+                    yPos += 5;
+                }
+
+                // Pump Results Table
+                if (results.pumps.length > 0) {
+                    doc.setFontSize(12);
+                    doc.setFont(undefined, 'bold');
+                    doc.text('PUMP RESULTS', 14, yPos);
+                    yPos += 7;
+                    doc.setFontSize(9);
+                    doc.setFont(undefined, 'bold');
+                    doc.text('Item Number', 14, yPos);
+                    doc.text('Description', 60, yPos);
+                    doc.text('BOM', 150, yPos);
+                    yPos += 5;
+                    doc.setFont(undefined, 'normal');
+
+                    results.pumps.forEach(item => {
+                        if (yPos > 270) {
+                            doc.addPage();
+                            yPos = 20;
+                        }
+                        doc.text(item.itemNumber, 14, yPos);
+                        const descLines = doc.splitTextToSize(item.description, 80);
+                        doc.text(descLines, 60, yPos);
+                        doc.text(item.bom, 150, yPos);
+                        yPos += descLines.length * 5 + 2;
+                    });
+                }
+            }
+
+            // Save PDF
+            const fileName = `D365_Config_${jobNumber}_${new Date().toISOString().split('T')[0]}.pdf`;
+            doc.save(fileName);
+        }
+    </script>
+</body>
+
+</html>
