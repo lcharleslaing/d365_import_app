@@ -153,6 +153,8 @@
                     <button class="btn btn-primary" onclick="saveCurrentJob()">Save Current Job</button>
                     <button class="btn btn-secondary" onclick="showJobList()">Manage Jobs</button>
                     <button class="btn btn-success" onclick="exportToPDF()">Export to PDF</button>
+                    <button class="btn btn-ghost btn-sm" onclick="setJobsFolder()" title="Set Jobs Folder Root">📁
+                        Set Jobs Folder</button>
                 </div>
                 <p class="text-sm text-gray-500 mt-2">All jobs are saved to D365_Jobs.json file. Save to Documents/D365
                     folder for easy access.</p>
@@ -339,6 +341,7 @@
         let allJobs = JSON.parse(localStorage.getItem('allJobs') || '[]');
         let currentJobId = null; // Track current job being edited
         let jobsFileHandle = null; // File handle for the jobs file
+        let jobsFolderHandle = null; // Jobs folder root directory handle
 
         // CRUD Section Toggle
         function toggleCrudSection() {
@@ -360,6 +363,9 @@
 
             // Try to load file handle from IndexedDB
             await loadFileHandle();
+
+            // Load Jobs folder handle
+            await loadJobsFolderHandle();
 
             // Load jobs from file if file handle exists, otherwise from localStorage
             if (jobsFileHandle) {
@@ -1903,8 +1909,8 @@
             window.location.href = mailtoLink;
         }
 
-        // PDF Export
-        function exportToPDF() {
+        // PDF Export - Enhanced with all details
+        async function exportToPDF() {
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
 
@@ -1912,6 +1918,183 @@
             const customerName = document.getElementById('customer_name').value || 'N/A';
             const customerLocation = document.getElementById('customer_location').value || 'N/A';
             const createAt = document.getElementById('create_at').value || 'N/A';
+
+            // Generate full results first
+            if (!jobNumber || jobNumber === 'N/A') {
+                showToast('Please enter a Job Number before exporting PDF.', 'warning');
+                return;
+            }
+
+            // Generate all results
+            const results = {
+                heaters: [],
+                tanks: [],
+                pumps: []
+            };
+
+            // Generate Heater Results (complete)
+            heaterConfigs.forEach((config, idx) => {
+                if (!config.dash_number) return;
+                const basePN = `${jobNumber}-${config.dash_number.padStart(2, '0')}`;
+                const heaterLabel = config['Heater A/B'] || (heaterConfigs.length > 1 ? String(idx + 1) : 'A');
+                const diameter = config['Heater Diameter'] || '';
+                const height = config['Heater Height'] || '';
+                const model = config['Heater Model'] || '';
+                const material = config.Material || '';
+                const stackDiam = config['Stack Diameter'] || '';
+                const stackHt = config['Stack Height'] || '';
+                const flangeInlet = config['Flange Inlet'] || '';
+                const gasSize = config['Gas Train Size'] || '';
+                const gasMount = config['Gas Train Mount'] || '';
+                const gasBTU = config['Gas Train BTU'] || '';
+                const gasHand = config['Gas Train Hand'] || '';
+
+                // Main item
+                results.heaters.push({
+                    itemNumber: basePN,
+                    description: `HEATER ${heaterLabel}, FAB, ${diameter}X${height}, ${model}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    bom: `${basePN}-000`,
+                    template: 'FG FAB',
+                    productType: 'Item'
+                });
+
+                // Sub-items
+                results.heaters.push({
+                    itemNumber: `${basePN}.1`,
+                    description: `HEATER ${heaterLabel}, WELD, ${diameter}X${height}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    bom: `${basePN}.1-000`,
+                    template: 'Sub Assy',
+                    productType: 'Pegged Supply'
+                });
+
+                results.heaters.push({
+                    itemNumber: `${basePN}.2`,
+                    description: `HEATER ${heaterLabel}, SHELL, ${diameter}X${height}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    bom: `${basePN}.2-000`,
+                    template: 'Sub Assy',
+                    productType: 'Phantom'
+                });
+
+                if (stackDiam && stackHt && flangeInlet) {
+                    results.heaters.push({
+                        itemNumber: `${basePN}.3`,
+                        description: `HEATER ${heaterLabel}, STACK, ${stackDiam}X${stackHt}, W/${flangeInlet}FL`,
+                        bom: `${basePN}.3-000`,
+                        template: 'Sub Assy',
+                        productType: 'Phantom'
+                    });
+                }
+
+                if (gasSize && gasMount && gasBTU && gasHand) {
+                    results.heaters.push({
+                        itemNumber: `${basePN}.4`,
+                        description: `GAS TRAIN, HTR ${heaterLabel}, ${gasSize}, ${gasMount}, SIEMENS, ${gasBTU}MBTU, ${gasHand}`,
+                        bom: `${basePN}.4-000`,
+                        template: 'Sub Assy',
+                        productType: 'Pegged Supply'
+                    });
+                }
+
+                if (model) {
+                    results.heaters.push({
+                        itemNumber: `${basePN}.5`,
+                        description: `HEATER ${heaterLabel}, MOD PIPING, ${model}`,
+                        bom: `${basePN}.5-000`,
+                        template: 'Sub Assy',
+                        productType: 'Phantom'
+                    });
+                }
+
+                if (diameter && stackDiam && material) {
+                    results.heaters.push({
+                        itemNumber: `${basePN}.1-A`,
+                        description: `PRECUT HTRA${diameter}, ${stackDiam}STACK, 11GA, ${material}`,
+                        bom: '',
+                        template: '',
+                        productType: ''
+                    });
+                }
+            });
+
+            // Generate Tank Results (complete)
+            tankConfigs.forEach((config, idx) => {
+                if (!config.dash_number) return;
+                const basePN = `${jobNumber}-${config.dash_number.padStart(2, '0')}`;
+                const diameter = config['Tank Diameter'] || '';
+                const height = config['Tank Height'] || '';
+                const tankInches = config['Tank Inches'] || '';
+                const type = config.Type || '';
+                const material = config.Material || '';
+
+                // Main item
+                results.tanks.push({
+                    itemNumber: basePN,
+                    description: `TANK, ${diameter}X${height}, ${type}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    bom: `${basePN}-000`,
+                    template: 'FG FAB',
+                    productType: 'Item'
+                });
+
+                // Sub-item .1
+                results.tanks.push({
+                    itemNumber: `${basePN}.1`,
+                    description: `TANK, SHELL, ${diameter}X${tankInches || height}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    bom: `${basePN}.1-000`,
+                    template: 'Sub Assy',
+                    productType: 'Phantom'
+                });
+
+                // Sub-item -A
+                if (diameter && height && material) {
+                    results.tanks.push({
+                        itemNumber: `${basePN}-A`,
+                        description: `PRECUT TANK${diameter}X${height}, 11GA, ${material}`,
+                        bom: '',
+                        template: '',
+                        productType: ''
+                    });
+                }
+            });
+
+            // Generate Pump Results (complete)
+            pumpConfigs.forEach((config, idx) => {
+                if (!config.dash_number) return;
+                const basePN = `${jobNumber}-${config.dash_number.padStart(2, '0')}`;
+                const numPumps = config['# of Pumps'] || '';
+                const pressure = config['Pump Pressure'] || '';
+                const type = config.Type || '';
+                const hp = config.HP || '';
+                const material = config.Material || '';
+
+                // Main item
+                results.pumps.push({
+                    itemNumber: basePN,
+                    description: `PUMP, ${numPumps}, ${pressure}, ${type}, ${hp}HP`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    bom: `${basePN}-000`
+                });
+
+                // Sub-item .1
+                if (numPumps && material) {
+                    const width = numPumps === 'SIMPLEX' ? '27.25' : numPumps === 'DUPLEX' ? '55' : '82.75';
+                    const length = '27.25';
+                    const height = '18.125';
+
+                    results.pumps.push({
+                        itemNumber: `${basePN}.1`,
+                        description: `PUMP SKID, ${numPumps}, ${width}X${length}X${height}, ${material}`,
+                        bom: `${basePN}.1-000`
+                    });
+                }
+
+                // Sub-item .1-A
+                if (numPumps) {
+                    results.pumps.push({
+                        itemNumber: `${basePN}.1-A`,
+                        description: `PRECUT, ${numPumps} PUMP SKID, 3/16PL`,
+                        bom: ''
+                    });
+                }
+            });
 
             let yPos = 20;
 
@@ -1947,146 +2130,167 @@
             doc.text(`Pumps: ${pumpConfigs.length}`, 14, yPos);
             yPos += 10;
 
-            // Heater Configurations Summary
+            // Heater Configurations - Full Details
             if (heaterConfigs.length > 0) {
                 doc.setFont(undefined, 'bold');
-                doc.text('Heater Configurations', 14, yPos);
+                doc.setFontSize(12);
+                doc.text('Heater Configurations - Full Details', 14, yPos);
                 yPos += 7;
                 doc.setFont(undefined, 'normal');
-                doc.setFontSize(10);
+                doc.setFontSize(9);
 
                 heaterConfigs.forEach((config, idx) => {
-                    if (yPos > 270) {
+                    if (yPos > 260) {
                         doc.addPage();
                         yPos = 20;
                     }
                     const dashNum = config.dash_number.padStart(2, '0');
                     const basePN = `${jobNumber}-${dashNum}`;
-                    doc.text(`${idx + 1}. ${basePN}: ${config['Heater Diameter'] || 'N/A'}X${config['Heater Height'] || 'N/A'}, ${config.Material || 'N/A'}, ${config['Heater Model'] || 'N/A'}`, 14, yPos);
+
+                    doc.setFont(undefined, 'bold');
+                    doc.text(`Heater ${idx + 1} - ${basePN}`, 14, yPos);
                     yPos += 5;
+                    doc.setFont(undefined, 'normal');
+
+                    const configLines = [
+                        `Material: ${config.Material || 'N/A'}`,
+                        `Heater Diameter: ${config['Heater Diameter'] || 'N/A'}`,
+                        `Stack Diameter: ${config['Stack Diameter'] || 'N/A'}`,
+                        `Stack Height: ${config['Stack Height'] || 'N/A'}`,
+                        `Heater Height: ${config['Heater Height'] || 'N/A'}`,
+                        `Flange Inlet: ${config['Flange Inlet'] || 'N/A'}`,
+                        `Heater Model: ${config['Heater Model'] || 'N/A'}`,
+                        `Gas Train Size: ${config['Gas Train Size'] || 'N/A'}`,
+                        `Gas Train Mount: ${config['Gas Train Mount'] || 'N/A'}`,
+                        `Gas Train BTU: ${config['Gas Train BTU'] || 'N/A'}`,
+                        `Gas Train Hand: ${config['Gas Train Hand'] || 'N/A'}`,
+                        `Heater A/B: ${config['Heater A/B'] || 'N/A'}`
+                    ];
+
+                    configLines.forEach(line => {
+                        if (yPos > 270) {
+                            doc.addPage();
+                            yPos = 20;
+                        }
+                        doc.text(`  ${line}`, 14, yPos);
+                        yPos += 4;
+                    });
+                    yPos += 3;
                 });
                 yPos += 5;
                 doc.setFontSize(12);
             }
 
-            // Tank Configurations Summary
+            // Tank Configurations - Full Details
             if (tankConfigs.length > 0) {
                 doc.setFont(undefined, 'bold');
-                doc.text('Tank Configurations', 14, yPos);
+                doc.setFontSize(12);
+                doc.text('Tank Configurations - Full Details', 14, yPos);
                 yPos += 7;
                 doc.setFont(undefined, 'normal');
-                doc.setFontSize(10);
+                doc.setFontSize(9);
 
                 tankConfigs.forEach((config, idx) => {
-                    if (yPos > 270) {
+                    if (yPos > 260) {
                         doc.addPage();
                         yPos = 20;
                     }
                     const dashNum = config.dash_number.padStart(2, '0');
                     const basePN = `${jobNumber}-${dashNum}`;
-                    doc.text(`${idx + 1}. ${basePN}: ${config['Tank Diameter'] || 'N/A'}X${config['Tank Height'] || 'N/A'}, ${config.Type || 'N/A'}, ${config.Material || 'N/A'}`, 14, yPos);
+
+                    doc.setFont(undefined, 'bold');
+                    doc.text(`Tank ${idx + 1} - ${basePN}`, 14, yPos);
                     yPos += 5;
+                    doc.setFont(undefined, 'normal');
+
+                    const configLines = [
+                        `Material: ${config.Material || 'N/A'}`,
+                        `Tank Diameter: ${config['Tank Diameter'] || 'N/A'}`,
+                        `Tank Height: ${config['Tank Height'] || 'N/A'}`,
+                        `Tank Inches: ${config['Tank Inches'] || 'N/A'}`,
+                        `Type: ${config.Type || 'N/A'}`
+                    ];
+
+                    configLines.forEach(line => {
+                        if (yPos > 270) {
+                            doc.addPage();
+                            yPos = 20;
+                        }
+                        doc.text(`  ${line}`, 14, yPos);
+                        yPos += 4;
+                    });
+                    yPos += 3;
                 });
                 yPos += 5;
                 doc.setFontSize(12);
             }
 
-            // Pump Configurations Summary
+            // Pump Configurations - Full Details
             if (pumpConfigs.length > 0) {
                 doc.setFont(undefined, 'bold');
-                doc.text('Pump Configurations', 14, yPos);
+                doc.setFontSize(12);
+                doc.text('Pump Configurations - Full Details', 14, yPos);
                 yPos += 7;
                 doc.setFont(undefined, 'normal');
-                doc.setFontSize(10);
+                doc.setFontSize(9);
 
                 pumpConfigs.forEach((config, idx) => {
-                    if (yPos > 270) {
+                    if (yPos > 260) {
                         doc.addPage();
                         yPos = 20;
                     }
                     const dashNum = config.dash_number.padStart(2, '0');
                     const basePN = `${jobNumber}-${dashNum}`;
-                    doc.text(`${idx + 1}. ${basePN}: ${config['# of Pumps'] || 'N/A'}, ${config['Pump Pressure'] || 'N/A'}, ${config.Type || 'N/A'}, ${config.HP || 'N/A'}HP`, 14, yPos);
+
+                    doc.setFont(undefined, 'bold');
+                    doc.text(`Pump ${idx + 1} - ${basePN}`, 14, yPos);
                     yPos += 5;
+                    doc.setFont(undefined, 'normal');
+
+                    const configLines = [
+                        `Material: ${config.Material || 'N/A'}`,
+                        `# of Pumps: ${config['# of Pumps'] || 'N/A'}`,
+                        `Pump Pressure: ${config['Pump Pressure'] || 'N/A'}`,
+                        `Type: ${config.Type || 'N/A'}`,
+                        `HP: ${config.HP || 'N/A'}`
+                    ];
+
+                    configLines.forEach(line => {
+                        if (yPos > 270) {
+                            doc.addPage();
+                            yPos = 20;
+                        }
+                        doc.text(`  ${line}`, 14, yPos);
+                        yPos += 4;
+                    });
+                    yPos += 3;
                 });
+                yPos += 5;
+                doc.setFontSize(12);
             }
 
-            // Generate results for detailed tables
-            const results = {
-                heaters: [],
-                tanks: [],
-                pumps: []
-            };
-
-            // Generate Heater Results (simplified for PDF)
-            heaterConfigs.forEach((config, idx) => {
-                if (!config.dash_number) return;
-                const basePN = `${jobNumber}-${config.dash_number.padStart(2, '0')}`;
-                const heaterLabel = config['Heater A/B'] || (heaterConfigs.length > 1 ? String(idx + 1) : 'A');
-                const diameter = config['Heater Diameter'] || '';
-                const height = config['Heater Height'] || '';
-                const model = config['Heater Model'] || '';
-                const material = config.Material || '';
-
-                results.heaters.push({
-                    itemNumber: basePN,
-                    description: `HEATER ${heaterLabel}, FAB, ${diameter}X${height}, ${model}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
-                    bom: `${basePN}-000`
-                });
-            });
-
-            // Generate Tank Results
-            tankConfigs.forEach((config, idx) => {
-                if (!config.dash_number) return;
-                const basePN = `${jobNumber}-${config.dash_number.padStart(2, '0')}`;
-                const diameter = config['Tank Diameter'] || '';
-                const height = config['Tank Height'] || '';
-                const type = config.Type || '';
-                const material = config.Material || '';
-
-                results.tanks.push({
-                    itemNumber: basePN,
-                    description: `TANK, ${diameter}X${height}, ${type}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
-                    bom: `${basePN}-000`
-                });
-            });
-
-            // Generate Pump Results
-            pumpConfigs.forEach((config, idx) => {
-                if (!config.dash_number) return;
-                const basePN = `${jobNumber}-${config.dash_number.padStart(2, '0')}`;
-                const numPumps = config['# of Pumps'] || '';
-                const pressure = config['Pump Pressure'] || '';
-                const type = config.Type || '';
-                const hp = config.HP || '';
-
-                results.pumps.push({
-                    itemNumber: basePN,
-                    description: `PUMP, ${numPumps}, ${pressure}, ${type}, ${hp}HP`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
-                    bom: `${basePN}-000`
-                });
-            });
-
-            // Add detailed results tables
+            // Add detailed results tables - ALL part numbers
             if (results.heaters.length > 0 || results.tanks.length > 0 || results.pumps.length > 0) {
                 doc.addPage();
                 yPos = 20;
                 doc.setFontSize(14);
                 doc.setFont(undefined, 'bold');
-                doc.text('Generated Part Numbers', 105, yPos, { align: 'center' });
+                doc.text('Generated Part Numbers - Complete List', 105, yPos, { align: 'center' });
                 yPos += 10;
 
-                // Heater Results Table
+                // Heater Results Table - ALL items
                 if (results.heaters.length > 0) {
                     doc.setFontSize(12);
                     doc.setFont(undefined, 'bold');
-                    doc.text('HEATER RESULTS', 14, yPos);
+                    doc.text('HEATER RESULTS - All Part Numbers', 14, yPos);
                     yPos += 7;
-                    doc.setFontSize(9);
+                    doc.setFontSize(8);
                     doc.setFont(undefined, 'bold');
                     doc.text('Item Number', 14, yPos);
-                    doc.text('Description', 60, yPos);
-                    doc.text('BOM', 150, yPos);
+                    doc.text('Description', 45, yPos);
+                    doc.text('BOM', 130, yPos);
+                    doc.text('Template', 155, yPos);
+                    doc.text('Product Type', 175, yPos);
                     yPos += 5;
                     doc.setFont(undefined, 'normal');
 
@@ -2094,27 +2298,40 @@
                         if (yPos > 270) {
                             doc.addPage();
                             yPos = 20;
+                            doc.setFontSize(8);
+                            doc.setFont(undefined, 'bold');
+                            doc.text('Item Number', 14, yPos);
+                            doc.text('Description', 45, yPos);
+                            doc.text('BOM', 130, yPos);
+                            doc.text('Template', 155, yPos);
+                            doc.text('Product Type', 175, yPos);
+                            yPos += 5;
+                            doc.setFont(undefined, 'normal');
                         }
                         doc.text(item.itemNumber, 14, yPos);
                         const descLines = doc.splitTextToSize(item.description, 80);
-                        doc.text(descLines, 60, yPos);
-                        doc.text(item.bom, 150, yPos);
-                        yPos += descLines.length * 5 + 2;
+                        doc.text(descLines, 45, yPos);
+                        doc.text(item.bom || '', 130, yPos);
+                        doc.text(item.template || '', 155, yPos);
+                        doc.text(item.productType || '', 175, yPos);
+                        yPos += Math.max(descLines.length * 4, 4) + 1;
                     });
                     yPos += 5;
                 }
 
-                // Tank Results Table
+                // Tank Results Table - ALL items
                 if (results.tanks.length > 0) {
                     doc.setFontSize(12);
                     doc.setFont(undefined, 'bold');
-                    doc.text('TANK RESULTS', 14, yPos);
+                    doc.text('TANK RESULTS - All Part Numbers', 14, yPos);
                     yPos += 7;
-                    doc.setFontSize(9);
+                    doc.setFontSize(8);
                     doc.setFont(undefined, 'bold');
                     doc.text('Item Number', 14, yPos);
-                    doc.text('Description', 60, yPos);
-                    doc.text('BOM', 150, yPos);
+                    doc.text('Description', 45, yPos);
+                    doc.text('BOM', 130, yPos);
+                    doc.text('Template', 155, yPos);
+                    doc.text('Product Type', 175, yPos);
                     yPos += 5;
                     doc.setFont(undefined, 'normal');
 
@@ -2122,23 +2339,34 @@
                         if (yPos > 270) {
                             doc.addPage();
                             yPos = 20;
+                            doc.setFontSize(8);
+                            doc.setFont(undefined, 'bold');
+                            doc.text('Item Number', 14, yPos);
+                            doc.text('Description', 45, yPos);
+                            doc.text('BOM', 130, yPos);
+                            doc.text('Template', 155, yPos);
+                            doc.text('Product Type', 175, yPos);
+                            yPos += 5;
+                            doc.setFont(undefined, 'normal');
                         }
                         doc.text(item.itemNumber, 14, yPos);
                         const descLines = doc.splitTextToSize(item.description, 80);
-                        doc.text(descLines, 60, yPos);
-                        doc.text(item.bom, 150, yPos);
-                        yPos += descLines.length * 5 + 2;
+                        doc.text(descLines, 45, yPos);
+                        doc.text(item.bom || '', 130, yPos);
+                        doc.text(item.template || '', 155, yPos);
+                        doc.text(item.productType || '', 175, yPos);
+                        yPos += Math.max(descLines.length * 4, 4) + 1;
                     });
                     yPos += 5;
                 }
 
-                // Pump Results Table
+                // Pump Results Table - ALL items
                 if (results.pumps.length > 0) {
                     doc.setFontSize(12);
                     doc.setFont(undefined, 'bold');
-                    doc.text('PUMP RESULTS', 14, yPos);
+                    doc.text('PUMP RESULTS - All Part Numbers', 14, yPos);
                     yPos += 7;
-                    doc.setFontSize(9);
+                    doc.setFontSize(8);
                     doc.setFont(undefined, 'bold');
                     doc.text('Item Number', 14, yPos);
                     doc.text('Description', 60, yPos);
@@ -2150,19 +2378,139 @@
                         if (yPos > 270) {
                             doc.addPage();
                             yPos = 20;
+                            doc.setFontSize(8);
+                            doc.setFont(undefined, 'bold');
+                            doc.text('Item Number', 14, yPos);
+                            doc.text('Description', 60, yPos);
+                            doc.text('BOM', 150, yPos);
+                            yPos += 5;
+                            doc.setFont(undefined, 'normal');
                         }
                         doc.text(item.itemNumber, 14, yPos);
                         const descLines = doc.splitTextToSize(item.description, 80);
                         doc.text(descLines, 60, yPos);
-                        doc.text(item.bom, 150, yPos);
-                        yPos += descLines.length * 5 + 2;
+                        doc.text(item.bom || '', 150, yPos);
+                        yPos += Math.max(descLines.length * 4, 4) + 1;
                     });
                 }
             }
 
-            // Save PDF
+            // Save PDF with folder location picker
             const fileName = `D365_Config_${jobNumber}_${new Date().toISOString().split('T')[0]}.pdf`;
-            doc.save(fileName);
+            await savePDFToLocation(doc, fileName);
+        }
+
+        async function savePDFToLocation(doc, fileName) {
+            // Check if File System Access API is supported
+            if ('showDirectoryPicker' in window && 'showSaveFilePicker' in window) {
+                try {
+                    // Always prompt for directory selection (user can navigate to subdirectory within Jobs folder)
+                    // Browser will remember last location, which should be in the Jobs folder if set
+                    const selectedDirectory = await window.showDirectoryPicker();
+
+                    // Create file in the selected directory
+                    const fileHandle = await selectedDirectory.getFileHandle(fileName, { create: true });
+                    const writable = await fileHandle.createWritable();
+                    const pdfBlob = doc.output('blob');
+                    await writable.write(pdfBlob);
+                    await writable.close();
+                    showToast('PDF saved successfully!', 'success');
+                } catch (error) {
+                    if (error.name === 'AbortError') {
+                        // User cancelled directory picker
+                        showToast('PDF save cancelled', 'info');
+                        return;
+                    }
+                    console.error('Error saving PDF:', error);
+                    // Fallback to file picker
+                    try {
+                        const fileHandle = await window.showSaveFilePicker({
+                            suggestedName: fileName,
+                            types: [{
+                                description: 'PDF Files',
+                                accept: { 'application/pdf': ['.pdf'] }
+                            }]
+                        });
+                        const writable = await fileHandle.createWritable();
+                        const pdfBlob = doc.output('blob');
+                        await writable.write(pdfBlob);
+                        await writable.close();
+                        showToast('PDF saved successfully!', 'success');
+                    } catch (fallbackError) {
+                        if (fallbackError.name !== 'AbortError') {
+                            // Final fallback to download
+                            doc.save(fileName);
+                            showToast('PDF downloaded (fallback mode)', 'info');
+                        }
+                    }
+                }
+            } else {
+                // Fallback for browsers without File System Access API
+                doc.save(fileName);
+                showToast('PDF downloaded', 'info');
+            }
+        }
+
+        async function loadJobsFolderHandle() {
+            try {
+                const db = await openDB();
+                const tx = db.transaction('fileHandles', 'readonly');
+                const store = tx.objectStore('fileHandles');
+                const result = await store.get('jobsFolder');
+
+                if (result && result.handle) {
+                    try {
+                        // Verify handle is still valid
+                        await result.handle.getFileHandle('test', { create: false }).catch(() => { });
+                        jobsFolderHandle = result.handle;
+                    } catch (e) {
+                        await clearJobsFolderHandle();
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading Jobs folder handle:', error);
+            }
+        }
+
+        async function clearJobsFolderHandle() {
+            try {
+                const db = await openDB();
+                const tx = db.transaction('fileHandles', 'readwrite');
+                const store = tx.objectStore('fileHandles');
+                await store.delete('jobsFolder');
+                jobsFolderHandle = null;
+            } catch (error) {
+                console.error('Error clearing Jobs folder handle:', error);
+            }
+        }
+
+        async function setJobsFolder() {
+            if (!('showDirectoryPicker' in window)) {
+                showToast('Directory picker not supported in this browser.', 'warning');
+                return;
+            }
+
+            try {
+                jobsFolderHandle = await window.showDirectoryPicker();
+                await saveJobsFolderHandleToDB();
+                showToast('Jobs folder set successfully!', 'success');
+            } catch (error) {
+                if (error.name !== 'AbortError') {
+                    showToast('Error selecting Jobs folder: ' + error.message, 'error');
+                }
+            }
+        }
+
+        async function saveJobsFolderHandleToDB() {
+            if (!jobsFolderHandle) return;
+            try {
+                const db = await openDB();
+                const tx = db.transaction('fileHandles', 'readwrite');
+                const store = tx.objectStore('fileHandles');
+                await store.put({ id: 'jobsFolder', handle: jobsFolderHandle });
+            } catch (error) {
+                console.error('Error saving Jobs folder handle:', error);
+            }
         }
     </script>
 </body>
