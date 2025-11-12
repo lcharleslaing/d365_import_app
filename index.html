@@ -1505,7 +1505,9 @@
                 if (!config.dash_number) return;
 
                 const basePN = `${jobNumber}-${config.dash_number.padStart(2, '0')}`;
-                const heaterLabel = config['Heater A/B'] || (heaterConfigs.length > 1 ? String(idx + 1) : 'A');
+                // Only include label if "Heater A/B" is explicitly chosen
+                const heaterLabel = config['Heater A/B'] ? config['Heater A/B'] : '';
+                const heaterLabelText = heaterLabel ? ` ${heaterLabel}` : '';
                 const diameter = config['Heater Diameter'] || '';
                 const height = config['Heater Height'] || '';
                 const model = config['Heater Model'] || '';
@@ -1514,7 +1516,7 @@
                 // Main item
                 results.heaters.push({
                     itemNumber: basePN,
-                    description: `HEATER ${heaterLabel}, FAB, ${diameter}X${height}, ${model}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    description: `HEATER${heaterLabelText}, FAB, ${diameter}X${height}, ${model}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
                     bom: `${basePN}-000`,
                     template: 'FG FAB',
                     productType: 'Item'
@@ -1531,7 +1533,7 @@
 
                 results.heaters.push({
                     itemNumber: `${basePN}.1`,
-                    description: `HEATER ${heaterLabel}, WELD, ${diameter}X${height}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    description: `HEATER${heaterLabelText}, WELD, ${diameter}X${height}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
                     bom: `${basePN}.1-000`,
                     template: 'Sub Assy',
                     productType: 'Pegged Supply'
@@ -1539,7 +1541,7 @@
 
                 results.heaters.push({
                     itemNumber: `${basePN}.2`,
-                    description: `HEATER ${heaterLabel}, SHELL, ${diameter}X${height}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    description: `HEATER${heaterLabelText}, SHELL, ${diameter}X${height}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
                     bom: `${basePN}.2-000`,
                     template: 'Sub Assy',
                     productType: 'Phantom'
@@ -1548,7 +1550,7 @@
                 if (stackDiam && stackHt && flangeInlet) {
                     results.heaters.push({
                         itemNumber: `${basePN}.3`,
-                        description: `HEATER ${heaterLabel}, STACK, ${stackDiam}X${stackHt}, W/${flangeInlet}FL`,
+                        description: `HEATER${heaterLabelText}, STACK, ${stackDiam}X${stackHt}, W/${flangeInlet}FL`,
                         bom: `${basePN}.3-000`,
                         template: 'Sub Assy',
                         productType: 'Phantom'
@@ -1556,9 +1558,10 @@
                 }
 
                 if (gasSize && gasMount && gasBTU && gasHand) {
+                    const htrLabelText = heaterLabel ? ` ${heaterLabel}` : '';
                     results.heaters.push({
                         itemNumber: `${basePN}.4`,
-                        description: `GAS TRAIN, HTR ${heaterLabel}, ${gasSize}, ${gasMount}, SIEMENS, ${gasBTU}MBTU, ${gasHand}`,
+                        description: `GAS TRAIN, HTR${htrLabelText}, ${gasSize}, ${gasMount}, SIEMENS, ${gasBTU}MBTU, ${gasHand}`,
                         bom: `${basePN}.4-000`,
                         template: 'Sub Assy',
                         productType: 'Pegged Supply'
@@ -1568,7 +1571,7 @@
                 if (model) {
                     results.heaters.push({
                         itemNumber: `${basePN}.5`,
-                        description: `HEATER ${heaterLabel}, MOD PIPING, ${model}`,
+                        description: `HEATER${heaterLabelText}, MOD PIPING, ${model}`,
                         bom: `${basePN}.5-000`,
                         template: 'Sub Assy',
                         productType: 'Phantom'
@@ -1940,7 +1943,9 @@
             heaterConfigs.forEach((config, idx) => {
                 if (!config.dash_number) return;
                 const basePN = `${jobNumber}-${config.dash_number.padStart(2, '0')}`;
-                const heaterLabel = config['Heater A/B'] || (heaterConfigs.length > 1 ? String(idx + 1) : 'A');
+                // Only include label if "Heater A/B" is explicitly chosen
+                const heaterLabel = config['Heater A/B'] ? config['Heater A/B'] : '';
+                const heaterLabelText = heaterLabel ? ` ${heaterLabel}` : '';
                 const diameter = config['Heater Diameter'] || '';
                 const height = config['Heater Height'] || '';
                 const model = config['Heater Model'] || '';
@@ -1956,7 +1961,7 @@
                 // Main item
                 results.heaters.push({
                     itemNumber: basePN,
-                    description: `HEATER ${heaterLabel}, FAB, ${diameter}X${height}, ${model}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    description: `HEATER${heaterLabelText}, FAB, ${diameter}X${height}, ${model}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
                     bom: `${basePN}-000`,
                     template: 'FG FAB',
                     productType: 'Item'
@@ -1965,7 +1970,7 @@
                 // Sub-items
                 results.heaters.push({
                     itemNumber: `${basePN}.1`,
-                    description: `HEATER ${heaterLabel}, WELD, ${diameter}X${height}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    description: `HEATER${heaterLabelText}, WELD, ${diameter}X${height}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
                     bom: `${basePN}.1-000`,
                     template: 'Sub Assy',
                     productType: 'Pegged Supply'
@@ -1973,7 +1978,7 @@
 
                 results.heaters.push({
                     itemNumber: `${basePN}.2`,
-                    description: `HEATER ${heaterLabel}, SHELL, ${diameter}X${height}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
+                    description: `HEATER${heaterLabelText}, SHELL, ${diameter}X${height}, ${material}`.replace(/,\s*,/g, ',').replace(/,\s*$/g, ''),
                     bom: `${basePN}.2-000`,
                     template: 'Sub Assy',
                     productType: 'Phantom'
@@ -1982,7 +1987,7 @@
                 if (stackDiam && stackHt && flangeInlet) {
                     results.heaters.push({
                         itemNumber: `${basePN}.3`,
-                        description: `HEATER ${heaterLabel}, STACK, ${stackDiam}X${stackHt}, W/${flangeInlet}FL`,
+                        description: `HEATER${heaterLabelText}, STACK, ${stackDiam}X${stackHt}, W/${flangeInlet}FL`,
                         bom: `${basePN}.3-000`,
                         template: 'Sub Assy',
                         productType: 'Phantom'
@@ -1990,9 +1995,10 @@
                 }
 
                 if (gasSize && gasMount && gasBTU && gasHand) {
+                    const htrLabelText = heaterLabel ? ` ${heaterLabel}` : '';
                     results.heaters.push({
                         itemNumber: `${basePN}.4`,
-                        description: `GAS TRAIN, HTR ${heaterLabel}, ${gasSize}, ${gasMount}, SIEMENS, ${gasBTU}MBTU, ${gasHand}`,
+                        description: `GAS TRAIN, HTR${htrLabelText}, ${gasSize}, ${gasMount}, SIEMENS, ${gasBTU}MBTU, ${gasHand}`,
                         bom: `${basePN}.4-000`,
                         template: 'Sub Assy',
                         productType: 'Pegged Supply'
@@ -2002,7 +2008,7 @@
                 if (model) {
                     results.heaters.push({
                         itemNumber: `${basePN}.5`,
-                        description: `HEATER ${heaterLabel}, MOD PIPING, ${model}`,
+                        description: `HEATER${heaterLabelText}, MOD PIPING, ${model}`,
                         bom: `${basePN}.5-000`,
                         template: 'Sub Assy',
                         productType: 'Phantom'
