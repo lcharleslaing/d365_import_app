@@ -45,6 +45,9 @@
                             <span class="label-text">Job Number</span>
                         </label>
                         <input type="text" id="job_number" class="input input-bordered" placeholder="e.g., 35411" />
+                        <label class="label" id="job-number-warning" style="display: none;">
+                            <span class="label-text-alt text-error">⚠️ This job number already exists</span>
+                        </label>
                     </div>
                     <div class="form-control">
                         <label class="label">
@@ -146,6 +149,7 @@
             <div class="card-body">
                 <h2 class="card-title text-xl mb-4">File Operations</h2>
                 <div class="flex flex-wrap gap-2">
+                    <button class="btn btn-accent" onclick="createNewJobFromMain()">New Job</button>
                     <button class="btn btn-primary" onclick="saveCurrentJob()">Save Current Job</button>
                     <button class="btn btn-secondary" onclick="showJobList()">Manage Jobs</button>
                     <button class="btn btn-success" onclick="exportToPDF()">Export to PDF</button>
@@ -238,6 +242,57 @@
             </div>
         </div>
     </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast toast-top toast-end z-50"></div>
+
+    <!-- Save Confirmation Dialog -->
+    <dialog id="save-confirm-dialog" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg">Save Current Job?</h3>
+            <p class="py-4">You have unsaved changes. Would you like to save the current job before creating a new one?
+            </p>
+            <div class="modal-action">
+                <button class="btn btn-primary" onclick="confirmSaveAndNew()">Save & New</button>
+                <button class="btn btn-ghost" onclick="discardAndNew()">Discard & New</button>
+                <button class="btn" onclick="cancelNewJob()">Cancel</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
+
+    <!-- Delete Confirmation Dialog -->
+    <dialog id="delete-confirm-dialog" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg">Delete Job?</h3>
+            <p class="py-4">Are you sure you want to delete this job? This action cannot be undone.</p>
+            <div class="modal-action">
+                <button class="btn btn-error" onclick="confirmDeleteJob()">Delete</button>
+                <button class="btn" onclick="cancelDeleteJob()">Cancel</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
+
+    <!-- Duplicate Job Dialog -->
+    <dialog id="duplicate-job-dialog" class="modal">
+        <div class="modal-box">
+            <h3 class="font-bold text-lg">Duplicate Job Number</h3>
+            <p class="py-4" id="duplicate-job-message">Job number already exists. Do you want to update the existing job
+                instead of creating a duplicate?</p>
+            <div class="modal-action">
+                <button class="btn btn-primary" onclick="confirmUpdateDuplicateJob()">Update Existing</button>
+                <button class="btn" onclick="cancelDuplicateJob()">Cancel</button>
+            </div>
+        </div>
+        <form method="dialog" class="modal-backdrop">
+            <button>close</button>
+        </form>
+    </dialog>
 
     <script>
         // Default options data
@@ -613,10 +668,27 @@
             // Auto-save current job if it exists
             if (currentJobId || document.getElementById('job_number').value) {
                 const jobData = getCurrentJobData();
+                const jobNumberValue = document.getElementById('job_number').value;
+
+                // Check for duplicate job number (excluding current job)
+                if (jobNumberValue) {
+                    const duplicateJob = allJobs.find(j =>
+                        j.formData.job_number &&
+                        j.formData.job_number.trim().toUpperCase() === jobNumberValue.trim().toUpperCase() &&
+                        j.id !== jobData.id
+                    );
+
+                    if (duplicateJob) {
+                        // Don't auto-save if duplicate exists
+                        console.log('Duplicate job number detected, skipping auto-save');
+                        return;
+                    }
+                }
+
                 const existingIndex = allJobs.findIndex(j => j.id === jobData.id);
                 if (existingIndex >= 0) {
                     allJobs[existingIndex] = jobData;
-                } else if (document.getElementById('job_number').value) {
+                } else if (jobNumberValue) {
                     allJobs.push(jobData);
                     currentJobId = jobData.id;
                 }
@@ -644,8 +716,33 @@
                 localStorage.setItem('formData', JSON.stringify(formData));
 
                 // Auto-save to jobs if job number exists
-                if (document.getElementById('job_number').value) {
+                const jobNumberValue = document.getElementById('job_number').value;
+                const warningLabel = document.getElementById('job-number-warning');
+
+                if (jobNumberValue) {
+                    // Check for duplicate job number (excluding current job)
                     const jobData = getCurrentJobData();
+                    const duplicateJob = allJobs.find(j =>
+                        j.formData.job_number &&
+                        j.formData.job_number.trim().toUpperCase() === jobNumberValue.trim().toUpperCase() &&
+                        j.id !== jobData.id
+                    );
+
+                    if (duplicateJob) {
+                        // Show warning
+                        if (warningLabel) {
+                            warningLabel.style.display = 'block';
+                        }
+                        // Don't auto-save if duplicate exists - user should manually save to update
+                        console.log('Duplicate job number detected, skipping auto-save');
+                        return;
+                    } else {
+                        // Hide warning if no duplicate
+                        if (warningLabel) {
+                            warningLabel.style.display = 'none';
+                        }
+                    }
+
                     const existingIndex = allJobs.findIndex(j => j.id === jobData.id);
                     if (existingIndex >= 0) {
                         allJobs[existingIndex] = jobData;
@@ -654,6 +751,11 @@
                         currentJobId = jobData.id;
                     }
                     localStorage.setItem('allJobs', JSON.stringify(allJobs));
+                } else {
+                    // Hide warning if job number is empty
+                    if (warningLabel) {
+                        warningLabel.style.display = 'none';
+                    }
                 }
             });
         });
@@ -686,17 +788,33 @@
             const jobNumber = jobData.formData.job_number;
 
             if (!jobNumber) {
-                alert('Please enter a Job Number before saving.');
+                showToast('Please enter a Job Number before saving.', 'warning');
                 return;
             }
 
-            // Find existing job or create new
-            const existingIndex = allJobs.findIndex(j => j.id === jobData.id);
-            if (existingIndex >= 0) {
-                allJobs[existingIndex] = jobData;
+            // Check for duplicate job number (excluding current job)
+            const duplicateJob = allJobs.find(j =>
+                j.formData.job_number &&
+                j.formData.job_number.trim().toUpperCase() === jobNumber.trim().toUpperCase() &&
+                j.id !== jobData.id
+            );
+
+            if (duplicateJob) {
+                // Show DaisyUI dialog for duplicate job
+                document.getElementById('duplicate-job-message').textContent = `Job number "${jobNumber}" already exists. Do you want to update the existing job instead of creating a duplicate?`;
+                window.pendingSaveJobData = jobData;
+                window.pendingDuplicateJob = duplicateJob;
+                document.getElementById('duplicate-job-dialog').showModal();
+                return;
             } else {
-                allJobs.push(jobData);
-                currentJobId = jobData.id;
+                // Find existing job by ID or create new
+                const existingIndex = allJobs.findIndex(j => j.id === jobData.id);
+                if (existingIndex >= 0) {
+                    allJobs[existingIndex] = jobData;
+                } else {
+                    allJobs.push(jobData);
+                    currentJobId = jobData.id;
+                }
             }
 
             // Save to localStorage
@@ -705,7 +823,7 @@
             // Save to file
             await saveJobsToFile();
 
-            alert('Job saved successfully!');
+            showToast('Job saved successfully!', 'success');
         }
 
         async function saveJobsToFile() {
@@ -928,7 +1046,7 @@
                     // Load from the file handle
                     await loadJobsFromFile();
                     renderJobList();
-                    alert('Jobs file loaded successfully!');
+                    showToast('Jobs file loaded successfully!', 'success');
                     return;
                 } catch (error) {
                     if (error.name !== 'AbortError') {
@@ -946,12 +1064,12 @@
                         allJobs = loadedJobs;
                         localStorage.setItem('allJobs', JSON.stringify(allJobs));
                         renderJobList();
-                        alert('Jobs file loaded successfully!');
+                        showToast('Jobs file loaded successfully!', 'success');
                     } else {
-                        alert('Invalid jobs file format. Expected an array of jobs.');
+                        showToast('Invalid jobs file format. Expected an array of jobs.', 'error');
                     }
                 } catch (error) {
-                    alert('Error loading jobs file: ' + error.message);
+                    showToast('Error loading jobs file: ' + error.message, 'error');
                 }
             };
             reader.readAsText(file);
@@ -1004,7 +1122,7 @@
         function loadJob(jobId) {
             const job = allJobs.find(j => j.id === jobId);
             if (!job) {
-                alert('Job not found!');
+                showToast('Job not found!', 'error');
                 return;
             }
 
@@ -1051,13 +1169,28 @@
             renderAllConfigs();
             closeJobList();
 
-            alert('Job loaded successfully!');
+            // Clear any duplicate warning
+            const warningLabel = document.getElementById('job-number-warning');
+            if (warningLabel) {
+                warningLabel.style.display = 'none';
+            }
+
+            showToast('Job loaded successfully!', 'success');
         }
 
-        async function deleteJob(jobId) {
-            if (!confirm('Are you sure you want to delete this job?')) {
-                return;
-            }
+        let pendingDeleteJobId = null;
+
+        function deleteJob(jobId) {
+            pendingDeleteJobId = jobId;
+            document.getElementById('delete-confirm-dialog').showModal();
+        }
+
+        async function confirmDeleteJob() {
+            document.getElementById('delete-confirm-dialog').close();
+
+            if (!pendingDeleteJobId) return;
+            const jobId = pendingDeleteJobId;
+            pendingDeleteJobId = null;
 
             allJobs = allJobs.filter(j => j.id !== jobId);
             localStorage.setItem('allJobs', JSON.stringify(allJobs));
@@ -1078,11 +1211,57 @@
 
             await saveJobsToFile();
             renderJobList();
+            showToast('Job deleted successfully.', 'success');
+        }
+
+        function cancelDeleteJob() {
+            document.getElementById('delete-confirm-dialog').close();
+            pendingDeleteJobId = null;
+        }
+
+        async function confirmUpdateDuplicateJob() {
+            document.getElementById('duplicate-job-dialog').close();
+
+            if (!window.pendingSaveJobData || !window.pendingDuplicateJob) return;
+
+            const jobData = window.pendingSaveJobData;
+            const duplicateJob = window.pendingDuplicateJob;
+
+            // Update the existing job instead
+            const duplicateIndex = allJobs.findIndex(j => j.id === duplicateJob.id);
+            if (duplicateIndex >= 0) {
+                allJobs[duplicateIndex] = jobData;
+                currentJobId = duplicateJob.id;
+            }
+
+            // Hide warning after update
+            const warningLabel = document.getElementById('job-number-warning');
+            if (warningLabel) {
+                warningLabel.style.display = 'none';
+            }
+
+            // Save to localStorage
+            localStorage.setItem('allJobs', JSON.stringify(allJobs));
+
+            // Save to file
+            await saveJobsToFile();
+
+            showToast('Job updated successfully!', 'success');
+
+            // Clear pending data
+            window.pendingSaveJobData = null;
+            window.pendingDuplicateJob = null;
+        }
+
+        function cancelDuplicateJob() {
+            document.getElementById('duplicate-job-dialog').close();
+            window.pendingSaveJobData = null;
+            window.pendingDuplicateJob = null;
         }
 
         async function selectJobsFile() {
             if (!('showOpenFilePicker' in window)) {
-                alert('File System Access API is not supported in this browser. Please use the "Load from File" option.');
+                showToast('File System Access API is not supported in this browser. Please use the "Load from File" option.', 'warning');
                 return;
             }
 
@@ -1105,10 +1284,10 @@
                 updateFileInfo();
                 renderJobList();
 
-                alert('Jobs file selected and loaded successfully!');
+                showToast('Jobs file selected and loaded successfully!', 'success');
             } catch (error) {
                 if (error.name !== 'AbortError') {
-                    alert('Error selecting file: ' + error.message);
+                    showToast('Error selecting file: ' + error.message, 'error');
                 }
             }
         }
@@ -1129,28 +1308,89 @@
             }
         }
 
-        function createNewJob() {
-            // Save current job if there's data
+        function isJobSaved() {
+            // Check if current job exists in allJobs
+            if (!currentJobId) return false;
+            const existingJob = allJobs.find(j => j.id === currentJobId);
+            return existingJob !== undefined;
+        }
+
+        function hasUnsavedChanges() {
             const jobNumber = document.getElementById('job_number').value;
-            if (jobNumber && (heaterConfigs.length > 0 || tankConfigs.length > 0 || pumpConfigs.length > 0)) {
-                if (confirm('Save current job before creating new one?')) {
-                    saveCurrentJob();
-                }
+            return jobNumber && (heaterConfigs.length > 0 || tankConfigs.length > 0 || pumpConfigs.length > 0);
+        }
+
+        function createNewJob() {
+            // Check if there are unsaved changes and job is not saved
+            if (hasUnsavedChanges() && !isJobSaved()) {
+                document.getElementById('save-confirm-dialog').showModal();
+                return;
             }
 
+            // Clear form
+            clearCurrentJob();
+
+            closeJobList();
+        }
+
+        function createNewJobFromMain() {
+            // Check if there are unsaved changes and job is not saved
+            if (hasUnsavedChanges() && !isJobSaved()) {
+                document.getElementById('save-confirm-dialog').showModal();
+                return;
+            }
+
+            // Clear form
+            clearCurrentJob();
+
+            showToast('New job started. Fill in the form to begin.', 'info');
+        }
+
+        async function confirmSaveAndNew() {
+            document.getElementById('save-confirm-dialog').close();
+            await saveCurrentJob();
+            clearCurrentJob();
+            showToast('New job started. Fill in the form to begin.', 'info');
+        }
+
+        function discardAndNew() {
+            document.getElementById('save-confirm-dialog').close();
+            clearCurrentJob();
+            showToast('New job started. Fill in the form to begin.', 'info');
+        }
+
+        function cancelNewJob() {
+            document.getElementById('save-confirm-dialog').close();
+        }
+
+        function clearCurrentJob() {
             // Clear form
             currentJobId = null;
             document.getElementById('job_number').value = '';
             document.getElementById('customer_name').value = '';
             document.getElementById('customer_location').value = '';
             document.getElementById('create_at').valueAsDate = new Date();
+
+            // Clear configurations
             heaterConfigs = [];
             tankConfigs = [];
             pumpConfigs = [];
             saveConfigs();
             renderAllConfigs();
 
-            closeJobList();
+            // Clear results
+            document.getElementById('results-container').innerHTML = '';
+            currentResults = {
+                heaters: [],
+                tanks: [],
+                pumps: []
+            };
+
+            // Clear warnings
+            const warningLabel = document.getElementById('job-number-warning');
+            if (warningLabel) {
+                warningLabel.style.display = 'none';
+            }
         }
 
         function copyFromButton(button) {
@@ -1194,17 +1434,53 @@
                         }, 1000);
                     }
                 } catch (err) {
-                    alert('Failed to copy: ' + err);
+                    showToast('Failed to copy: ' + err, 'error');
                 }
                 document.body.removeChild(textArea);
             });
+        }
+
+        // Store results globally for email generation
+        let currentResults = {
+            heaters: [],
+            tanks: [],
+            pumps: []
+        };
+
+        // Toast notification function
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+
+            const toastId = 'toast-' + Date.now();
+            const alertClass = type === 'error' ? 'alert-error' : type === 'success' ? 'alert-success' : type === 'warning' ? 'alert-warning' : 'alert-info';
+            const icon = type === 'error' ? '❌' : type === 'success' ? '✅' : type === 'warning' ? '⚠️' : 'ℹ️';
+
+            const toast = document.createElement('div');
+            toast.id = toastId;
+            toast.className = `alert ${alertClass} shadow-lg mb-2`;
+            toast.innerHTML = `
+                <span>${icon} ${message}</span>
+            `;
+
+            container.appendChild(toast);
+
+            // Auto-dismiss after 3 seconds
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'transition-opacity', 'duration-300');
+                setTimeout(() => {
+                    if (toast.parentNode) {
+                        toast.parentNode.removeChild(toast);
+                    }
+                }, 300);
+            }, 3000);
         }
 
         // Results Generation
         function generateResults() {
             const jobNumber = document.getElementById('job_number').value;
             if (!jobNumber) {
-                alert('Please enter a Job Number');
+                showToast('Please enter a Job Number', 'warning');
                 return;
             }
 
@@ -1384,6 +1660,8 @@
                 }
             });
 
+            // Store results globally for email generation
+            currentResults = results;
             displayResults(results);
         }
 
@@ -1551,7 +1829,78 @@
 
             if (results.heaters.length === 0 && results.tanks.length === 0 && results.pumps.length === 0) {
                 container.innerHTML = '<p class="text-center text-gray-500">No configurations found. Please add and configure heaters, tanks, or pumps.</p>';
+            } else {
+                // Add New P/N Request section at the bottom
+                const pnRequestSection = document.createElement('div');
+                pnRequestSection.className = 'mt-8 pt-6 border-t border-base-300';
+                pnRequestSection.innerHTML = `
+                    <h3 class="text-xl font-bold mb-4">New P/N Request</h3>
+                    <p class="text-sm text-gray-500 mb-4">Generate an email request for precut part numbers</p>
+                    <button class="btn btn-primary" onclick="openPNRequestEmail()">
+                        📧 Request New P/N
+                    </button>
+                `;
+                container.appendChild(pnRequestSection);
             }
+        }
+
+        function openPNRequestEmail() {
+            const jobNumber = document.getElementById('job_number').value;
+            if (!jobNumber) {
+                showToast('Please enter a Job Number first.', 'warning');
+                return;
+            }
+
+            // Check if results have been generated
+            if (currentResults.heaters.length === 0 && currentResults.tanks.length === 0 && currentResults.pumps.length === 0) {
+                showToast('Please generate results first by clicking "Generate All Results".', 'warning');
+                return;
+            }
+
+            // Get all precut items from results
+            const precutItems = [];
+
+            // Get heater precuts (.1-A items)
+            const heaterPrecuts = currentResults.heaters.filter(item => item.itemNumber.endsWith('.1-A'));
+            heaterPrecuts.forEach(item => {
+                precutItems.push({
+                    partNumber: item.itemNumber,
+                    description: item.description
+                });
+            });
+
+            // Get tank precuts (-A items, but not .1-A)
+            const tankPrecuts = currentResults.tanks.filter(item => item.itemNumber.endsWith('-A') && !item.itemNumber.endsWith('.1-A'));
+            tankPrecuts.forEach(item => {
+                precutItems.push({
+                    partNumber: item.itemNumber,
+                    description: item.description
+                });
+            });
+
+            if (precutItems.length === 0) {
+                showToast('No precut items found. Please generate results with heater or tank configurations that include precuts.', 'warning');
+                return;
+            }
+
+            // Build email body
+            let emailBody = `Hi George,\n\nCan you setup P/Ns for Job: ${jobNumber}\n\n`;
+
+            precutItems.forEach(item => {
+                emailBody += `${item.partNumber}\t${item.description}\n`;
+            });
+
+            emailBody += '\nThanks so Much!!!!';
+
+            // Encode email components
+            const subject = encodeURIComponent(`New P/N Request for ${jobNumber}`);
+            const body = encodeURIComponent(emailBody);
+
+            // Create mailto link
+            const mailtoLink = `mailto:gemurphy@kemcosystems.com?subject=${subject}&body=${body}`;
+
+            // Open email client
+            window.location.href = mailtoLink;
         }
 
         // PDF Export
