@@ -153,6 +153,8 @@
                     <button class="btn btn-primary" onclick="saveCurrentJob()">Save Current Job</button>
                     <button class="btn btn-secondary" onclick="showJobList()">Manage Jobs</button>
                     <button class="btn btn-success" onclick="exportToPDF()">Export to PDF</button>
+                    <button id="open-pdf-location-btn" class="btn btn-info btn-sm" onclick="openPDFLocation()"
+                        style="display: none;" title="Open Last Saved PDF Location">📂 Open PDF Location</button>
                     <button class="btn btn-ghost btn-sm" onclick="setJobsFolder()" title="Set Jobs Folder Root">📁
                         Set Jobs Folder</button>
                 </div>
@@ -342,6 +344,8 @@
         let currentJobId = null; // Track current job being edited
         let jobsFileHandle = null; // File handle for the jobs file
         let jobsFolderHandle = null; // Jobs folder root directory handle
+        let lastPDFDirectoryHandle = null; // Last directory where PDF was saved
+        let lastPDFFileName = null; // Last PDF file name
 
         // CRUD Section Toggle
         function toggleCrudSection() {
@@ -2401,7 +2405,49 @@
         }
 
         async function savePDFToLocation(doc, fileName) {
-            // Check if File System Access API is supported
+            // Check if running in Electron
+            if (window.electronAPI) {
+                try {
+                    // Convert PDF to base64
+                    const pdfBlob = doc.output('blob');
+                    const reader = new FileReader();
+                    const pdfBase64 = await new Promise((resolve, reject) => {
+                        reader.onload = () => {
+                            const base64 = reader.result.split(',')[1]; // Remove data:application/pdf;base64, prefix
+                            resolve(base64);
+                        };
+                        reader.onerror = reject;
+                        reader.readAsDataURL(pdfBlob);
+                    });
+
+                    // Get default path from Jobs folder if set
+                    let defaultPath = null;
+                    if (jobsFolderHandle && typeof jobsFolderHandle === 'string') {
+                        // In Electron, jobsFolderHandle would be a path string
+                        // Use path separator based on platform
+                        const pathSep = window.electronAPI?.platform === 'win32' ? '\\' : '/';
+                        defaultPath = jobsFolderHandle + pathSep + fileName;
+                    }
+
+                    // Use Electron's save dialog
+                    const result = await window.electronAPI.savePDF(pdfBase64, fileName, defaultPath);
+
+                    if (result.success && result.filePath) {
+                        lastPDFDirectoryHandle = result.filePath;
+                        lastPDFFileName = fileName;
+                        updateOpenPDFLocationButton();
+                        showToast('PDF saved successfully!', 'success');
+                    } else if (!result.canceled) {
+                        showToast('Error saving PDF: ' + (result.error || 'Unknown error'), 'error');
+                    }
+                } catch (error) {
+                    console.error('Error saving PDF in Electron:', error);
+                    showToast('Error saving PDF: ' + error.message, 'error');
+                }
+                return;
+            }
+
+            // Browser: Check if File System Access API is supported
             if ('showDirectoryPicker' in window && 'showSaveFilePicker' in window) {
                 try {
                     // Always prompt for directory selection (user can navigate to subdirectory within Jobs folder)
@@ -2414,6 +2460,12 @@
                     const pdfBlob = doc.output('blob');
                     await writable.write(pdfBlob);
                     await writable.close();
+
+                    // Store the directory handle and file name for "Open Location" button
+                    lastPDFDirectoryHandle = selectedDirectory;
+                    lastPDFFileName = fileName;
+                    updateOpenPDFLocationButton();
+
                     showToast('PDF saved successfully!', 'success');
                 } catch (error) {
                     if (error.name === 'AbortError') {
@@ -2435,6 +2487,10 @@
                         const pdfBlob = doc.output('blob');
                         await writable.write(pdfBlob);
                         await writable.close();
+
+                        lastPDFFileName = fileName;
+                        updateOpenPDFLocationButton();
+
                         showToast('PDF saved successfully!', 'success');
                     } catch (fallbackError) {
                         if (fallbackError.name !== 'AbortError') {
@@ -2451,7 +2507,53 @@
             }
         }
 
+        function updateOpenPDFLocationButton() {
+            const btn = document.getElementById('open-pdf-location-btn');
+            if (lastPDFDirectoryHandle || lastPDFFileName) {
+                btn.style.display = 'inline-block';
+            } else {
+                btn.style.display = 'none';
+            }
+        }
+
+        async function openPDFLocation() {
+            if (window.electronAPI) {
+                // Electron: Use native shell to show file in folder
+                try {
+                    const result = await window.electronAPI.openPDFLocation();
+                    if (!result.success) {
+                        showToast('Unable to open PDF location: ' + (result.error || 'Unknown error'), 'error');
+                    }
+                } catch (error) {
+                    showToast('Error opening PDF location: ' + error.message, 'error');
+                }
+            } else {
+                // Browser: Try to open directory using File System Access API
+                if (lastPDFDirectoryHandle) {
+                    try {
+                        // Note: Browsers don't have a direct way to open file explorer
+                        // Show a message with the file name
+                        showToast(`PDF saved: ${lastPDFFileName}`, 'info');
+                    } catch (error) {
+                        showToast('Unable to open PDF location', 'error');
+                    }
+                } else {
+                    showToast('PDF location not available', 'warning');
+                }
+            }
+        }
+
         async function loadJobsFolderHandle() {
+            // In Electron, load from localStorage
+            if (window.electronAPI) {
+                const savedPath = localStorage.getItem('jobsFolderPath');
+                if (savedPath) {
+                    jobsFolderHandle = savedPath;
+                }
+                return;
+            }
+
+            // Browser: Load from IndexedDB
             try {
                 const db = await openDB();
                 const tx = db.transaction('fileHandles', 'readonly');
@@ -2485,6 +2587,26 @@
         }
 
         async function setJobsFolder() {
+            // Check if running in Electron
+            if (window.electronAPI) {
+                try {
+                    const result = await window.electronAPI.showDirectoryDialog({
+                        title: 'Select Jobs Folder',
+                        properties: ['openDirectory']
+                    });
+
+                    if (!result.canceled && result.filePaths && result.filePaths.length > 0) {
+                        jobsFolderHandle = result.filePaths[0]; // Store as string path in Electron
+                        await saveJobsFolderHandleToDB();
+                        showToast('Jobs folder set successfully!', 'success');
+                    }
+                } catch (error) {
+                    showToast('Error selecting Jobs folder: ' + error.message, 'error');
+                }
+                return;
+            }
+
+            // Browser: Use File System Access API
             if (!('showDirectoryPicker' in window)) {
                 showToast('Directory picker not supported in this browser.', 'warning');
                 return;
@@ -2504,10 +2626,17 @@
         async function saveJobsFolderHandleToDB() {
             if (!jobsFolderHandle) return;
             try {
-                const db = await openDB();
-                const tx = db.transaction('fileHandles', 'readwrite');
-                const store = tx.objectStore('fileHandles');
-                await store.put({ id: 'jobsFolder', handle: jobsFolderHandle });
+                // In Electron, store as string path; in browser, store as handle
+                if (window.electronAPI && typeof jobsFolderHandle === 'string') {
+                    // Store path in localStorage for Electron
+                    localStorage.setItem('jobsFolderPath', jobsFolderHandle);
+                } else {
+                    // Store handle in IndexedDB for browser
+                    const db = await openDB();
+                    const tx = db.transaction('fileHandles', 'readwrite');
+                    const store = tx.objectStore('fileHandles');
+                    await store.put({ id: 'jobsFolder', handle: jobsFolderHandle });
+                }
             } catch (error) {
                 console.error('Error saving Jobs folder handle:', error);
             }
