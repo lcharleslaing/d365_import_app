@@ -1581,9 +1581,10 @@
                 // Sub-item .1-A (item number always -A, but description includes Heater A/B label if configured)
                 if (diameter && stackDiam && material) {
                     const descLabel = heaterLabel || '';
+                    const labelText = descLabel ? ` ${descLabel} ` : '';
                     results.heaters.push({
                         itemNumber: `${basePN}.1-A`,
-                        description: `PRECUT HTR${descLabel}${diameter}, ${stackDiam}STACK, 11GA, ${material}`,
+                        description: `PRECUT HTR${labelText}${diameter}, ${stackDiam}STACK, 11GA, ${material}`,
                         bom: '',
                         template: '',
                         productType: ''
@@ -2021,9 +2022,10 @@
 
                 if (diameter && stackDiam && material) {
                     const descLabel = heaterLabel || '';
+                    const labelText = descLabel ? ` ${descLabel} ` : '';
                     results.heaters.push({
                         itemNumber: `${basePN}.1-A`,
-                        description: `PRECUT HTR${descLabel}${diameter}, ${stackDiam}STACK, 11GA, ${material}`,
+                        description: `PRECUT HTR${labelText}${diameter}, ${stackDiam}STACK, 11GA, ${material}`,
                         bom: '',
                         template: '',
                         productType: ''
