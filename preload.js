@@ -23,6 +23,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     openPDFLocation: () => ipcRenderer.invoke('open-pdf-location'),
     
     // Platform info
-    platform: process.platform
+    platform: process.platform,
+    
+    // BOM Import from Inventor
+    importBOMFromInventor: (idwFilePath) => ipcRenderer.invoke('import-bom-from-inventor', idwFilePath)
 });
 

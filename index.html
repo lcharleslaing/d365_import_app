@@ -245,6 +245,71 @@
                 <div id="results-container"></div>
             </div>
         </div>
+
+        <!-- BOM Import from Inventor Section -->
+        <div class="card bg-base-100 shadow-xl mb-6">
+            <div class="card-body">
+                <h2 class="card-title text-xl mb-4">BOM Import from Inventor</h2>
+                <p class="text-sm text-gray-500 mb-4">Import BOM data from Inventor .idw drawing files and match to generated part numbers.</p>
+                
+                <div class="flex flex-wrap gap-2 mb-4">
+                    <button class="btn btn-primary" onclick="selectInventorDrawing()" id="select-idw-btn">
+                        📄 Select Inventor Drawing (.idw)
+                    </button>
+                    <button class="btn btn-ghost btn-sm" onclick="clearBOMData()" id="clear-bom-btn" style="display: none;">
+                        🗑️ Clear BOM Data
+                    </button>
+                </div>
+                
+                <div id="bom-import-status" class="alert alert-info mb-4" style="display: none;">
+                    <span id="bom-status-text"></span>
+                </div>
+                
+                <div id="bom-import-results" style="display: none;">
+                    <div class="divider"></div>
+                    <h3 class="text-lg font-bold mb-4">Imported BOM Data</h3>
+                    
+                    <!-- Print Package Summary -->
+                    <div class="mb-6">
+                        <div class="flex justify-between items-center mb-2">
+                            <h4 class="text-md font-semibold">Print Package Checklist (All BOM Items)</h4>
+                            <button class="btn btn-sm btn-ghost" onclick="printPrintPackage()" title="Print Print Package Checklist">
+                                🖨️ Print Checklist
+                            </button>
+                        </div>
+                        <p class="text-xs text-gray-500 mb-2">Check off items as you print the drawings. Status is saved automatically.</p>
+                        <div class="overflow-x-auto">
+                            <table class="table table-zebra table-sm w-full" id="print-package-table">
+                                <thead>
+                                    <tr>
+                                        <th class="w-12">✓</th>
+                                        <th>SHEET NAME</th>
+                                        <th>KEMCO PART NUMBER</th>
+                                        <th>KEMCO DESCRIPTION</th>
+                                        <th>QTY</th>
+                                        <th>UM</th>
+                                        <th>AMOUNT</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="print-package-tbody">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <!-- Matched Sheets to Part Numbers -->
+                    <div class="mb-6">
+                        <h4 class="text-md font-semibold mb-2">Matched Sheets</h4>
+                        <div id="matched-sheets-list"></div>
+                    </div>
+                    
+                    <!-- Unmatched Sheets Warning -->
+                    <div id="unmatched-sheets-warning" class="alert alert-warning" style="display: none;">
+                        <span id="unmatched-sheets-text"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Toast Container -->
@@ -371,8 +436,17 @@
             // Load Jobs folder handle
             await loadJobsFolderHandle();
 
-            // Load jobs from file if file handle exists, otherwise from localStorage
-            if (jobsFileHandle) {
+            // Load jobs from file if file handle/path exists, otherwise from localStorage
+            if (window.electronAPI) {
+                // In Electron, try to load from saved file path
+                const savedPath = localStorage.getItem('jobsFilePath');
+                if (savedPath) {
+                    await loadJobsFromFile();
+                } else {
+                    loadJobsFromStorage();
+                }
+            } else if (jobsFileHandle) {
+                // Browser: Use file handle
                 await loadJobsFromFile();
             } else {
                 loadJobsFromStorage();
@@ -394,6 +468,30 @@
 
             // Render existing configs
             renderAllConfigs();
+
+            // Load BOM data if there's a current job
+            if (currentJobId) {
+                const job = allJobs.find(j => j.id === currentJobId);
+                if (job && job.bomData) {
+                    importedBOMData = job.bomData;
+                    bomPartNumberMap = {};
+                    
+                    // Generate results first if we have configs but no results yet
+                    const jobNumber = document.getElementById('job_number').value;
+                    if (jobNumber && (heaterConfigs.length > 0 || tankConfigs.length > 0 || pumpConfigs.length > 0) && !currentResults) {
+                        console.log('Page init: Generating results before BOM matching...');
+                        generateResults();
+                        console.log('Page init: Results generated, part numbers:', 
+                            [...(currentResults?.heaters || []).map(h => h.itemNumber),
+                             ...(currentResults?.tanks || []).map(t => t.itemNumber),
+                             ...(currentResults?.pumps || []).map(p => p.itemNumber)]);
+                    }
+                    
+                    // Now match BOM to part numbers
+                    matchBOMToPartNumbers();
+                    displayBOMResults();
+                }
+            }
         });
 
         // CRUD Functions
@@ -784,6 +882,8 @@
                 heaterConfigs: heaterConfigs,
                 tankConfigs: tankConfigs,
                 pumpConfigs: pumpConfigs,
+                bomData: importedBOMData || null,
+                printPackageChecklist: getPrintPackageChecklistForCurrentJob(),
                 createdAt: currentJobId ? allJobs.find(j => j.id === currentJobId)?.createdAt || new Date().toISOString() : new Date().toISOString(),
                 lastSaved: new Date().toISOString()
             };
@@ -837,7 +937,51 @@
         }
 
         async function saveJobsToFile() {
-            // Check if File System Access API is supported
+            // In Electron, use IPC to save file
+            if (window.electronAPI) {
+                try {
+                    // Check if we have a saved file path
+                    let filePath = localStorage.getItem('jobsFilePath');
+                    
+                    // If no saved path, prompt user ONCE to select location
+                    if (!filePath) {
+                        const result = await window.electronAPI.showSaveDialog({
+                            title: 'Select Location to Save Jobs File',
+                            defaultPath: 'D365_Jobs.json',
+                            filters: [
+                                { name: 'JSON Files', extensions: ['json'] }
+                            ]
+                        });
+                        
+                        if (result.canceled || !result.filePath) {
+                            console.log('User cancelled file save location selection');
+                            return;
+                        }
+                        
+                        filePath = result.filePath;
+                        // Save the path for future use
+                        localStorage.setItem('jobsFilePath', filePath);
+                        console.log('File path saved for future use:', filePath);
+                    }
+                    
+                    // Always overwrite the same file (no prompt)
+                    const jsonStr = JSON.stringify(allJobs, null, 2);
+                    const writeResult = await window.electronAPI.writeFile(filePath, jsonStr);
+                    
+                    if (writeResult.success) {
+                        console.log('File saved successfully to:', filePath);
+                        updateFileInfo();
+                    } else {
+                        throw new Error(writeResult.error || 'Failed to save file');
+                    }
+                } catch (error) {
+                    console.error('Error saving file:', error);
+                    showToast(`Error saving file: ${error.message}`, 'error');
+                }
+                return;
+            }
+            
+            // Browser: Check if File System Access API is supported
             if ('showSaveFilePicker' in window) {
                 try {
                     // If we don't have a file handle, get one from user (first time only)
@@ -920,6 +1064,31 @@
         }
 
         async function loadJobsFromFile() {
+            // In Electron, load from saved path
+            if (window.electronAPI) {
+                const filePath = localStorage.getItem('jobsFilePath');
+                if (filePath) {
+                    try {
+                        const readResult = await window.electronAPI.readFile(filePath);
+                        if (readResult.success) {
+                            const loadedJobs = JSON.parse(readResult.data);
+                            if (Array.isArray(loadedJobs)) {
+                                allJobs = loadedJobs;
+                                localStorage.setItem('allJobs', JSON.stringify(allJobs));
+                            }
+                        } else {
+                            throw new Error(readResult.error || 'Failed to read file');
+                        }
+                    } catch (error) {
+                        console.error('Error loading file:', error);
+                        // Fallback to localStorage
+                        loadJobsFromStorage();
+                    }
+                }
+                return;
+            }
+
+            // Browser: Use file handle
             if (!jobsFileHandle) return;
 
             try {
@@ -939,8 +1108,19 @@
         }
 
         async function loadFileHandle() {
+            // In Electron, we don't need IndexedDB for file handles (we use IPC)
+            if (window.electronAPI) {
+                // Check if we have a file path in localStorage
+                const filePath = localStorage.getItem('jobsFilePath');
+                if (filePath) {
+                    jobsFileHandle = filePath;
+                    console.log('File path loaded from localStorage:', filePath);
+                }
+                return;
+            }
+
+            // Browser: Try to get file handle from IndexedDB
             try {
-                // Try to get file handle from IndexedDB
                 const db = await openDB();
                 const tx = db.transaction('fileHandles', 'readonly');
                 const store = tx.objectStore('fileHandles');
@@ -966,11 +1146,15 @@
                     }
                 }
             } catch (error) {
-                console.error('Error loading file handle:', error);
+                // IndexedDB errors are non-critical - just log and continue
+                // The app will work fine without file handles (uses localStorage)
+                if (error.name !== 'InternalError') {
+                    console.error('Error loading file handle:', error);
+                }
                 // If IndexedDB fails, try to get filename from localStorage
                 const fileName = localStorage.getItem('jobsFileName');
                 if (fileName) {
-                    console.log('IndexedDB error, but found filename:', fileName);
+                    console.log('IndexedDB unavailable, using localStorage for jobs data.');
                 }
             }
         }
@@ -1169,6 +1353,42 @@
                 pumpConfigs = [];
             }
 
+            // Load Print Package checklist first (before displaying BOM)
+            if (job.printPackageChecklist) {
+                setPrintPackageChecklistForCurrentJob(job.printPackageChecklist);
+            } else {
+                clearPrintPackageChecklistForCurrentJob();
+            }
+
+            // Generate results FIRST (before loading BOM data) if we have configs
+            if (heaterConfigs.length > 0 || tankConfigs.length > 0 || pumpConfigs.length > 0) {
+                const jobNumber = document.getElementById('job_number').value;
+                if (jobNumber) {
+                    console.log('Generating results for loaded job before BOM matching...');
+                    generateResults();
+                    console.log('Results generated, part numbers:', 
+                        [...(currentResults?.heaters || []).map(h => h.itemNumber),
+                         ...(currentResults?.tanks || []).map(t => t.itemNumber),
+                         ...(currentResults?.pumps || []).map(p => p.itemNumber)]);
+                }
+            }
+
+            // Load BOM data
+            if (job.bomData) {
+                importedBOMData = job.bomData;
+                bomPartNumberMap = {};
+                
+                // Now match BOM to part numbers (results should already be generated above)
+                matchBOMToPartNumbers();
+                displayBOMResults(); // This will use the checklist states we just loaded
+            } else {
+                importedBOMData = null;
+                bomPartNumberMap = {};
+                document.getElementById('bom-import-results').style.display = 'none';
+                document.getElementById('bom-import-status').style.display = 'none';
+                document.getElementById('clear-bom-btn').style.display = 'none';
+            }
+
             // Update localStorage
             localStorage.setItem('heaterConfigs', JSON.stringify(heaterConfigs));
             localStorage.setItem('tankConfigs', JSON.stringify(tankConfigs));
@@ -1270,6 +1490,48 @@
         }
 
         async function selectJobsFile() {
+            // In Electron, use IPC to select file
+            if (window.electronAPI) {
+                try {
+                    const result = await window.electronAPI.showOpenDialog({
+                        title: 'Select Jobs File',
+                        filters: [
+                            { name: 'JSON Files', extensions: ['json'] }
+                        ],
+                        properties: ['openFile']
+                    });
+
+                    if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+                        return;
+                    }
+
+                    const filePath = result.filePaths[0];
+                    
+                    // Save the path for future saves
+                    localStorage.setItem('jobsFilePath', filePath);
+                    
+                    // Load jobs from the selected file
+                    const readResult = await window.electronAPI.readFile(filePath);
+                    if (readResult.success) {
+                        const loadedJobs = JSON.parse(readResult.data);
+                        if (Array.isArray(loadedJobs)) {
+                            allJobs = loadedJobs;
+                            localStorage.setItem('allJobs', JSON.stringify(allJobs));
+                        }
+                    }
+
+                    // Update UI
+                    updateFileInfo();
+                    renderJobList();
+
+                    showToast('Jobs file selected and loaded successfully!', 'success');
+                } catch (error) {
+                    showToast('Error selecting file: ' + error.message, 'error');
+                }
+                return;
+            }
+
+            // Browser: Use File System Access API
             if (!('showOpenFilePicker' in window)) {
                 showToast('File System Access API is not supported in this browser. Please use the "Load from File" option.', 'warning');
                 return;
@@ -1305,7 +1567,18 @@
         function updateFileInfo() {
             const infoEl = document.getElementById('current-file-info');
             if (infoEl) {
-                if (jobsFileHandle) {
+                if (window.electronAPI) {
+                    // Electron: Show saved file path
+                    const filePath = localStorage.getItem('jobsFilePath');
+                    if (filePath) {
+                        const fileName = filePath.split('\\').pop() || filePath.split('/').pop();
+                        infoEl.textContent = `Saving to: ${fileName} (Auto-save enabled, no prompts)` + 
+                                           (filePath.length > 50 ? `\n${filePath}` : `\n${filePath}`);
+                    } else {
+                        infoEl.textContent = 'No file location set. Will prompt on first save.';
+                    }
+                } else if (jobsFileHandle) {
+                    // Browser: Show file handle name
                     infoEl.textContent = `Current file: ${jobsFileHandle.name} (All saves go to this file automatically)`;
                 } else {
                     const fileName = localStorage.getItem('jobsFileName');
@@ -1678,6 +1951,12 @@
             // Store results globally for email generation
             currentResults = results;
             displayResults(results);
+            
+            // Re-match BOM data if it exists
+            if (importedBOMData) {
+                matchBOMToPartNumbers();
+                displayBOMResults();
+            }
         }
 
         function displayResults(results) {
@@ -2652,6 +2931,659 @@
                 }
             } catch (error) {
                 console.error('Error saving Jobs folder handle:', error);
+            }
+        }
+
+        // ========== BOM Import from Inventor Functions ==========
+        let importedBOMData = null;
+        let bomPartNumberMap = {}; // Maps part numbers to their BOM data
+
+        async function selectInventorDrawing() {
+            if (!window.electronAPI) {
+                showToast('This feature requires Electron. Please use the desktop app.', 'error');
+                return;
+            }
+
+            try {
+                const result = await window.electronAPI.showOpenDialog({
+                    title: 'Select Inventor Drawing File',
+                    filters: [
+                        { name: 'Inventor Drawings', extensions: ['idw'] }
+                    ],
+                    properties: ['openFile']
+                });
+
+                if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+                    return;
+                }
+
+                const idwFilePath = result.filePaths[0];
+                await importBOMFromFile(idwFilePath);
+            } catch (error) {
+                showToast(`Error selecting file: ${error.message}`, 'error');
+                console.error('Error selecting Inventor drawing:', error);
+            }
+        }
+
+        async function importBOMFromFile(idwFilePath) {
+            const statusDiv = document.getElementById('bom-import-status');
+            const statusText = document.getElementById('bom-status-text');
+            const selectBtn = document.getElementById('select-idw-btn');
+            const clearBtn = document.getElementById('clear-bom-btn');
+
+            try {
+                // Show loading status
+                statusDiv.style.display = 'block';
+                statusDiv.className = 'alert alert-info mb-4';
+                statusText.textContent = 'Extracting BOM data from Inventor... This may take a moment.';
+                selectBtn.disabled = true;
+
+                // Call Electron IPC to execute PowerShell script
+                const result = await window.electronAPI.importBOMFromInventor(idwFilePath);
+
+                if (!result.success) {
+                    throw new Error(result.error || 'Failed to import BOM data');
+                }
+
+                importedBOMData = result.data;
+                
+                // Match sheets to part numbers and display results
+                matchBOMToPartNumbers();
+                displayBOMResults();
+
+                // Auto-save job to persist BOM data
+                if (currentJobId || document.getElementById('job_number').value) {
+                    await saveCurrentJob();
+                }
+
+                // Show success status
+                statusDiv.className = 'alert alert-success mb-4';
+                statusText.textContent = `Successfully imported BOM data from ${idwFilePath.split('\\').pop()}`;
+                clearBtn.style.display = 'inline-block';
+
+            } catch (error) {
+                statusDiv.className = 'alert alert-error mb-4';
+                statusText.textContent = `Error: ${error.message}`;
+                showToast(`BOM import failed: ${error.message}`, 'error');
+                console.error('BOM import error:', error);
+            } finally {
+                selectBtn.disabled = false;
+            }
+        }
+
+        function matchBOMToPartNumbers() {
+            if (!importedBOMData) {
+                return;
+            }
+
+            // If no results yet, try to generate them if configs exist
+            if (!currentResults) {
+                const jobNumber = document.getElementById('job_number').value;
+                if (jobNumber && (heaterConfigs.length > 0 || tankConfigs.length > 0 || pumpConfigs.length > 0)) {
+                    console.log('Generating results for matching...');
+                    generateResults();
+                    console.log('Results generated:', currentResults);
+                } else {
+                    // No results and no way to generate them, clear the map
+                    console.log('Cannot generate results - missing job number or configs');
+                    bomPartNumberMap = {};
+                    return;
+                }
+            }
+
+            // If still no results after trying to generate, return
+            if (!currentResults) {
+                console.log('No results available for matching');
+                bomPartNumberMap = {};
+                return;
+            }
+
+            bomPartNumberMap = {};
+            const allPartNumbers = [];
+
+            // Collect all part numbers from current results
+            if (currentResults.heaters) {
+                currentResults.heaters.forEach(item => {
+                    allPartNumbers.push(item.itemNumber);
+                });
+            }
+            if (currentResults.tanks) {
+                currentResults.tanks.forEach(item => {
+                    allPartNumbers.push(item.itemNumber);
+                });
+            }
+            if (currentResults.pumps) {
+                currentResults.pumps.forEach(item => {
+                    allPartNumbers.push(item.itemNumber);
+                });
+            }
+
+            console.log('Available part numbers for matching:', allPartNumbers);
+            console.log('Sheets to match:', importedBOMData.sheets.map(s => ({
+                finalTabName: s.finalTabName,
+                partNumberPrefix: s.partNumberPrefix
+            })));
+
+            // Helper function to extract part number prefix from finalTabName
+            function extractPartNumberPrefix(tabName) {
+                if (!tabName) return null;
+                // Try to match pattern: {P/N}_{rest} or {P/N}.{suffix}_{rest}
+                // Examples: "35411-01_TANK FFA" -> "35411-01"
+                //           "35411-01.1_SHELL FFA" -> "35411-01.1"
+                const match = tabName.match(/^([\d]+-[\d]+(?:\.[\d]+)?)/);
+                return match ? match[1] : null;
+            }
+
+            // Match sheets to part numbers based on prefix
+            importedBOMData.sheets.forEach(sheet => {
+                // Get part number prefix - use saved value or extract from finalTabName
+                let partNumberPrefix = sheet.partNumberPrefix;
+                if (!partNumberPrefix && sheet.finalTabName) {
+                    partNumberPrefix = extractPartNumberPrefix(sheet.finalTabName);
+                }
+                
+                console.log(`Matching sheet "${sheet.finalTabName}" with prefix "${partNumberPrefix}"`);
+                
+                if (partNumberPrefix) {
+                    // Try exact match first
+                    if (allPartNumbers.includes(partNumberPrefix)) {
+                        console.log(`  ✓ Exact match found: ${partNumberPrefix}`);
+                        if (!bomPartNumberMap[partNumberPrefix]) {
+                            bomPartNumberMap[partNumberPrefix] = [];
+                        }
+                        bomPartNumberMap[partNumberPrefix].push(sheet);
+                    } else {
+                        // Try partial match (e.g., "35221-01" matches "35221-01.1", "35221-01.2", etc.)
+                        const basePartNumber = partNumberPrefix.split('.')[0];
+                        const matchedParts = allPartNumbers.filter(pn => {
+                            // Exact match with base
+                            if (pn === basePartNumber) return true;
+                            // Starts with base + "."
+                            if (pn.startsWith(basePartNumber + '.')) return true;
+                            return false;
+                        });
+                        
+                        console.log(`  Trying partial match for base "${basePartNumber}":`, matchedParts);
+                        
+                        if (matchedParts.length > 0) {
+                            matchedParts.forEach(pn => {
+                                if (!bomPartNumberMap[pn]) {
+                                    bomPartNumberMap[pn] = [];
+                                }
+                                bomPartNumberMap[pn].push(sheet);
+                            });
+                            console.log(`  ✓ Partial match found: ${matchedParts.join(', ')}`);
+                        } else {
+                            console.log(`  ✗ No match found for "${partNumberPrefix}"`);
+                        }
+                    }
+                } else {
+                    console.log(`  ✗ No prefix extracted from "${sheet.finalTabName}"`);
+                }
+            });
+            
+            console.log('Final bomPartNumberMap:', bomPartNumberMap);
+        }
+
+        function displayBOMResults() {
+            if (!importedBOMData) {
+                return;
+            }
+
+            const resultsDiv = document.getElementById('bom-import-results');
+            resultsDiv.style.display = 'block';
+
+            // Display Print Package
+            displayPrintPackage();
+
+            // Display Matched Sheets
+            displayMatchedSheets();
+
+            // Display Unmatched Sheets Warning
+            displayUnmatchedSheets();
+        }
+
+        function displayPrintPackage() {
+            const tbody = document.getElementById('print-package-tbody');
+            tbody.innerHTML = '';
+
+            if (!importedBOMData.printPackage || importedBOMData.printPackage.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-gray-500">No Print Package items found</td></tr>';
+                return;
+            }
+
+            // Load saved checkbox states for current job
+            const savedStates = getPrintPackageChecklistForCurrentJob();
+
+            importedBOMData.printPackage.forEach((item, index) => {
+                const row = document.createElement('tr');
+                const itemKey = `${item.sheetName}_${item.kemcoPartNumber}`;
+                const isChecked = savedStates[itemKey] || false;
+                
+                // Create unique ID for checkbox
+                const checkboxId = `print-check-${index}`;
+                
+                row.innerHTML = `
+                    <td class="text-center">
+                        <input type="checkbox" 
+                               class="checkbox checkbox-sm" 
+                               id="${checkboxId}"
+                               ${isChecked ? 'checked' : ''}
+                               onchange="updatePrintPackageChecklist('${escapeHtml(itemKey)}', this.checked)" />
+                    </td>
+                    <td>${escapeHtml(item.sheetName || '')}</td>
+                    <td>${escapeHtml(item.kemcoPartNumber || '')}</td>
+                    <td>${escapeHtml(item.kemcoDescription || '')}</td>
+                    <td>${escapeHtml(item.qty || '')}</td>
+                    <td>${escapeHtml(item.um || '')}</td>
+                    <td>${escapeHtml(item.amount || '')}</td>
+                `;
+                
+                // Add strikethrough style if checked
+                if (isChecked) {
+                    row.style.opacity = '0.6';
+                    row.querySelectorAll('td:not(:first-child)').forEach(td => {
+                        td.style.textDecoration = 'line-through';
+                    });
+                }
+                
+                tbody.appendChild(row);
+            });
+        }
+
+        function updatePrintPackageChecklist(itemKey, isChecked) {
+            // Load current states for current job
+            const savedStates = getPrintPackageChecklistForCurrentJob();
+            
+            // Update state
+            savedStates[itemKey] = isChecked;
+            
+            // Save back to job data
+            setPrintPackageChecklistForCurrentJob(savedStates);
+            
+            // Auto-save job to persist checklist state
+            if (currentJobId || document.getElementById('job_number').value) {
+                saveCurrentJob();
+            }
+            
+            // Update visual styling
+            const event = window.event;
+            const checkbox = event.target;
+            const row = checkbox.closest('tr');
+            
+            if (isChecked) {
+                row.style.opacity = '0.6';
+                row.querySelectorAll('td:not(:first-child)').forEach(td => {
+                    td.style.textDecoration = 'line-through';
+                });
+            } else {
+                row.style.opacity = '1';
+                row.querySelectorAll('td:not(:first-child)').forEach(td => {
+                    td.style.textDecoration = 'none';
+                });
+            }
+        }
+
+        function getPrintPackageChecklistForCurrentJob() {
+            if (!currentJobId) {
+                const jobNumber = document.getElementById('job_number').value;
+                if (jobNumber) {
+                    // Try to find job by job number
+                    const job = allJobs.find(j => j.formData && j.formData.job_number === jobNumber);
+                    if (job && job.printPackageChecklist) {
+                        return job.printPackageChecklist;
+                    }
+                }
+                return {};
+            }
+            
+            const job = allJobs.find(j => j.id === currentJobId);
+            return job && job.printPackageChecklist ? job.printPackageChecklist : {};
+        }
+
+        function setPrintPackageChecklistForCurrentJob(checklist) {
+            if (!currentJobId) {
+                const jobNumber = document.getElementById('job_number').value;
+                if (jobNumber) {
+                    // Try to find job by job number
+                    const jobIndex = allJobs.findIndex(j => j.formData && j.formData.job_number === jobNumber);
+                    if (jobIndex >= 0) {
+                        allJobs[jobIndex].printPackageChecklist = checklist;
+                        localStorage.setItem('allJobs', JSON.stringify(allJobs));
+                    }
+                }
+                return;
+            }
+            
+            const jobIndex = allJobs.findIndex(j => j.id === currentJobId);
+            if (jobIndex >= 0) {
+                allJobs[jobIndex].printPackageChecklist = checklist;
+                localStorage.setItem('allJobs', JSON.stringify(allJobs));
+            }
+        }
+
+        function clearPrintPackageChecklistForCurrentJob() {
+            setPrintPackageChecklistForCurrentJob({});
+        }
+
+        function printPrintPackage() {
+            // Create a print-friendly version
+            const printWindow = window.open('', '_blank');
+            const table = document.getElementById('print-package-table');
+            
+            if (!table) {
+                showToast('Print Package table not found', 'error');
+                return;
+            }
+
+            // Clone the table and update checkboxes to show checked state
+            const clonedTable = table.cloneNode(true);
+            const checkboxes = clonedTable.querySelectorAll('input[type="checkbox"]');
+            checkboxes.forEach(cb => {
+                const td = cb.parentElement;
+                td.innerHTML = cb.checked ? '✓' : '☐';
+                td.style.textAlign = 'center';
+                td.style.fontSize = '18px';
+            });
+
+            printWindow.document.write(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Print Package Checklist</title>
+                    <style>
+                        body {
+                            font-family: Arial, sans-serif;
+                            margin: 20px;
+                        }
+                        table {
+                            width: 100%;
+                            border-collapse: collapse;
+                            margin-top: 20px;
+                        }
+                        th, td {
+                            border: 1px solid #ddd;
+                            padding: 8px;
+                            text-align: left;
+                        }
+                        th {
+                            background-color: #f2f2f2;
+                            font-weight: bold;
+                        }
+                        tr:nth-child(even) {
+                            background-color: #f9f9f9;
+                        }
+                        .checked-row {
+                            opacity: 0.6;
+                            text-decoration: line-through;
+                        }
+                        @media print {
+                            @page {
+                                margin: 1cm;
+                            }
+                            body {
+                                margin: 0;
+                            }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <h1>Print Package Checklist</h1>
+                    <p><strong>Job:</strong> ${escapeHtml(document.getElementById('job_number').value || 'N/A')}</p>
+                    <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+                    ${clonedTable.outerHTML}
+                </body>
+                </html>
+            `);
+            
+            printWindow.document.close();
+            printWindow.focus();
+            
+            // Wait for content to load, then print
+            setTimeout(() => {
+                printWindow.print();
+            }, 250);
+        }
+
+        function displayMatchedSheets() {
+            const container = document.getElementById('matched-sheets-list');
+            container.innerHTML = '';
+
+            if (Object.keys(bomPartNumberMap).length === 0) {
+                container.innerHTML = '<p class="text-gray-500">No sheets matched to part numbers. Make sure you have generated results first.</p>';
+                return;
+            }
+
+            // Group by part number and display
+            Object.keys(bomPartNumberMap).sort().forEach(partNumber => {
+                const sheets = bomPartNumberMap[partNumber];
+                const partCard = document.createElement('div');
+                partCard.className = 'card bg-base-200 shadow-sm mb-4';
+
+                let cardContent = `
+                    <div class="card-body">
+                        <h5 class="card-title text-sm">${escapeHtml(partNumber)}</h5>
+                        <div class="collapse collapse-arrow">
+                            <input type="checkbox" />
+                            <div class="collapse-title text-sm font-medium">
+                                ${sheets.length} sheet(s) matched
+                            </div>
+                            <div class="collapse-content">
+                `;
+
+                sheets.forEach((sheet, sheetIndex) => {
+                    const uniqueId = `${partNumber}_${sheetIndex}`;
+                    cardContent += `
+                        <div class="mb-4">
+                            <div class="flex justify-between items-center mb-2">
+                                <p class="font-semibold text-xs">${escapeHtml(sheet.finalTabName)}</p>
+                                <button class="btn btn-xs btn-primary" onclick="copyBOMToClipboard('${uniqueId}')" title="Copy KEMCO PART NUMBER, WAREHOUSE, QTY columns">
+                                    📋 Copy BOM
+                                </button>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="table table-xs table-zebra w-full" id="bom-table-${uniqueId}">
+                                    <thead>
+                                        <tr>
+                                            <th class="bg-gray-300">KEMCO PART NUMBER</th>
+                                            <th class="bg-gray-300">WAREHOUSE</th>
+                                            <th class="bg-gray-300">QTY</th>
+                                            <th>KEMCO DESCRIPTION</th>
+                                            <th>UM</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                    `;
+
+                    sheet.bomRows.forEach(row => {
+                        const partNum = row['KEMCO PART NUMBER'] || '';
+                        const warehouse = row['WAREHOUSE'] || '000';
+                        const qty = row['QTY'] || '';
+                        const desc = row['KEMCO DESCRIPTION'] || '';
+                        const um = row['UM'] || '';
+
+                        cardContent += `
+                            <tr>
+                                <td class="bg-gray-200" data-part-num="${escapeHtml(partNum)}">${escapeHtml(partNum)}</td>
+                                <td class="bg-gray-200" data-warehouse="${escapeHtml(warehouse)}">${escapeHtml(warehouse)}</td>
+                                <td class="bg-gray-200" data-qty="${escapeHtml(qty)}">${escapeHtml(qty)}</td>
+                                <td>${escapeHtml(desc)}</td>
+                                <td>${escapeHtml(um)}</td>
+                            </tr>
+                        `;
+                    });
+
+                    cardContent += `
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                cardContent += `
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                partCard.innerHTML = cardContent;
+                container.appendChild(partCard);
+            });
+        }
+
+        function displayUnmatchedSheets() {
+            const warningDiv = document.getElementById('unmatched-sheets-warning');
+            const warningText = document.getElementById('unmatched-sheets-text');
+
+            if (!importedBOMData.sheets) {
+                warningDiv.style.display = 'none';
+                return;
+            }
+
+            const matchedSheetNames = new Set();
+            Object.values(bomPartNumberMap).forEach(sheets => {
+                sheets.forEach(sheet => {
+                    matchedSheetNames.add(sheet.sheetName);
+                });
+            });
+
+            // Helper function to extract part number prefix (same as in matchBOMToPartNumbers)
+            function extractPartNumberPrefixForUnmatched(tabName) {
+                if (!tabName) return null;
+                const match = tabName.match(/^([\d]+-[\d]+(?:\.[\d]+)?)/);
+                return match ? match[1] : null;
+            }
+
+            const unmatchedSheets = importedBOMData.sheets.filter(sheet => {
+                if (matchedSheetNames.has(sheet.sheetName)) return false;
+                // Check if sheet has a part number prefix (either saved or extractable)
+                const prefix = sheet.partNumberPrefix || (sheet.finalTabName ? extractPartNumberPrefixForUnmatched(sheet.finalTabName) : null);
+                return prefix !== null;
+            });
+
+            if (unmatchedSheets.length > 0) {
+                warningDiv.style.display = 'block';
+                const sheetNames = unmatchedSheets.map(s => s.finalTabName).join(', ');
+                warningText.textContent = `Warning: ${unmatchedSheets.length} sheet(s) could not be matched to any part numbers: ${sheetNames}`;
+            } else {
+                warningDiv.style.display = 'none';
+            }
+        }
+
+        function clearBOMData() {
+            importedBOMData = null;
+            bomPartNumberMap = {};
+            
+            // Clear from current job
+            if (currentJobId) {
+                const jobIndex = allJobs.findIndex(j => j.id === currentJobId);
+                if (jobIndex >= 0) {
+                    allJobs[jobIndex].bomData = null;
+                    allJobs[jobIndex].printPackageChecklist = {};
+                    localStorage.setItem('allJobs', JSON.stringify(allJobs));
+                }
+            } else {
+                const jobNumber = document.getElementById('job_number').value;
+                if (jobNumber) {
+                    const jobIndex = allJobs.findIndex(j => j.formData && j.formData.job_number === jobNumber);
+                    if (jobIndex >= 0) {
+                        allJobs[jobIndex].bomData = null;
+                        allJobs[jobIndex].printPackageChecklist = {};
+                        localStorage.setItem('allJobs', JSON.stringify(allJobs));
+                    }
+                }
+            }
+            
+            document.getElementById('bom-import-results').style.display = 'none';
+            document.getElementById('bom-import-status').style.display = 'none';
+            document.getElementById('clear-bom-btn').style.display = 'none';
+            
+            showToast('BOM data cleared', 'info');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function copyBOMToClipboard(tableId) {
+            try {
+                const table = document.getElementById(`bom-table-${tableId}`);
+                if (!table) {
+                    showToast('Table not found', 'error');
+                    return;
+                }
+
+                // Get all rows from tbody (skip header)
+                const rows = table.querySelectorAll('tbody tr');
+                if (rows.length === 0) {
+                    showToast('No BOM data to copy', 'warning');
+                    return;
+                }
+
+                // Extract the three columns: KEMCO PART NUMBER, WAREHOUSE, QTY
+                const data = [];
+                rows.forEach(row => {
+                    const partNum = row.querySelector('td[data-part-num]')?.getAttribute('data-part-num') || 
+                                   row.cells[0]?.textContent?.trim() || '';
+                    const warehouse = row.querySelector('td[data-warehouse]')?.getAttribute('data-warehouse') || 
+                                     row.cells[1]?.textContent?.trim() || '';
+                    const qty = row.querySelector('td[data-qty]')?.getAttribute('data-qty') || 
+                               row.cells[2]?.textContent?.trim() || '';
+                    
+                    // Format as tab-separated values (like Excel)
+                    data.push(`${partNum}\t${warehouse}\t${qty}`);
+                });
+
+                // Join rows with newlines (Excel format)
+                const clipboardText = data.join('\n');
+
+                // Copy to clipboard using Clipboard API
+                await navigator.clipboard.writeText(clipboardText);
+                
+                showToast(`Copied ${rows.length} rows to clipboard (KEMCO PART NUMBER, WAREHOUSE, QTY)`, 'success');
+            } catch (error) {
+                console.error('Error copying to clipboard:', error);
+                
+                // Fallback: Use the older execCommand method
+                try {
+                    // Re-extract data for fallback
+                    const table = document.getElementById(`bom-table-${tableId}`);
+                    const rows = table.querySelectorAll('tbody tr');
+                    const data = [];
+                    rows.forEach(row => {
+                        const partNum = row.querySelector('td[data-part-num]')?.getAttribute('data-part-num') || 
+                                       row.cells[0]?.textContent?.trim() || '';
+                        const warehouse = row.querySelector('td[data-warehouse]')?.getAttribute('data-warehouse') || 
+                                         row.cells[1]?.textContent?.trim() || '';
+                        const qty = row.querySelector('td[data-qty]')?.getAttribute('data-qty') || 
+                                   row.cells[2]?.textContent?.trim() || '';
+                        data.push(`${partNum}\t${warehouse}\t${qty}`);
+                    });
+                    const clipboardText = data.join('\n');
+                    
+                    const textArea = document.createElement('textarea');
+                    textArea.value = clipboardText;
+                    textArea.style.position = 'fixed';
+                    textArea.style.left = '-999999px';
+                    textArea.style.top = '-999999px';
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
+                    
+                    const successful = document.execCommand('copy');
+                    document.body.removeChild(textArea);
+                    
+                    if (successful) {
+                        showToast(`Copied ${rows.length} rows to clipboard (KEMCO PART NUMBER, WAREHOUSE, QTY)`, 'success');
+                    } else {
+                        showToast('Failed to copy. Please try selecting and copying manually.', 'error');
+                    }
+                } catch (fallbackError) {
+                    showToast('Failed to copy. Please try selecting and copying manually.', 'error');
+                }
             }
         }
     </script>

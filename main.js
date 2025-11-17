@@ -2,6 +2,9 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
+const { exec } = require('child_process');
+const { promisify } = require('util');
+const execAsync = promisify(exec);
 
 let mainWindow;
 let lastPDFPath = null;
@@ -160,5 +163,45 @@ ipcMain.handle('open-pdf-location', async () => {
         }
     }
     return { success: false, error: 'No PDF path available' };
+});
+
+// BOM Import from Inventor
+ipcMain.handle('import-bom-from-inventor', async (event, idwFilePath) => {
+    try {
+        const scriptPath = path.join(__dirname, 'scripts', 'extract-bom-from-inventor.ps1');
+        
+        // Check if script exists
+        if (!fsSync.existsSync(scriptPath)) {
+            return { success: false, error: 'BOM extraction script not found' };
+        }
+        
+        // Execute PowerShell script
+        // Use -ExecutionPolicy Bypass to avoid execution policy issues
+        const command = `powershell.exe -ExecutionPolicy Bypass -File "${scriptPath}" -IdwFilePath "${idwFilePath}"`;
+        
+        const { stdout, stderr } = await execAsync(command, {
+            maxBuffer: 10 * 1024 * 1024, // 10MB buffer for large BOMs
+            encoding: 'utf8'
+        });
+        
+        if (stderr && !stderr.includes('Warning')) {
+            // PowerShell warnings are OK, but actual errors are not
+            console.error('PowerShell stderr:', stderr);
+        }
+        
+        // Parse JSON output
+        try {
+            const bomData = JSON.parse(stdout);
+            return { success: true, data: bomData };
+        } catch (parseError) {
+            // If JSON parsing fails, check if there's an error message
+            if (stdout.includes('Error') || stdout.includes('Exception')) {
+                return { success: false, error: stdout };
+            }
+            return { success: false, error: `Failed to parse BOM data: ${parseError.message}. Output: ${stdout.substring(0, 500)}` };
+        }
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
 });
 
